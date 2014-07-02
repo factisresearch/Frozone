@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DoAndIfThenElse #-}
+{-# LANGUAGE RankNTypes #-}
 module Frozone.Server where
 
 import Frozone.Types
@@ -16,13 +17,14 @@ import Control.Exception
 import Control.Monad.Logger
 import Control.Monad.Trans
 import Control.Monad.Trans.Resource
+import Data.List
+import Data.Maybe
 import Data.Time
 import Database.Persist.Sqlite hiding (get)
 import Network.Email.Sendmail
 import System.Directory
 import System.Exit
 import System.FilePath
-import Web.PathPieces
 import Web.Spock
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString as BS
@@ -31,6 +33,7 @@ import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.HashSet as HS
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import qualified Data.Yaml as YML
 import qualified Database.Persist as DB
@@ -59,49 +62,49 @@ runSQL action =
     runQuery $ \conn ->
         runResourceT $ runNoLoggingT $ runSqlConn action conn
 
-createPosthook :: FrozoneState -> TempRepositoryId -> FilePath -> IO ()
-createPosthook st repoId repoDir =
-    do exists <- doesFileExist prefsFile
-       baseCt <-
-           if exists
-           then do c <- readFile prefsFile
-                   return (c ++ "\n")
-           else return ""
-       writeFile prefsFile (baseCt
-                            ++ "apply posthook wget --quiet " ++ localServerApi ++ "\n"
-                            ++ "apply run-posthook")
-       doLog LogNote ("Created posthook on " ++ repoDir ++ ": Will notify " ++ localServerApi)
+sendNotifications :: Maybe T.Text -> TempRepository -> IO ()
+sendNotifications mTarget repo =
+    do doLog LogInfo ("Sending email '" ++ subject ++ "' to " ++ (intercalate ", " targets))
+       sendmail (Just "Frozone <thiemann@cp-med.com>") targets
+                 ("Subject: Frozone: " ++ subject ++ "\r\n" ++ msg ++ "\n\n" ++ "Patches in repository:\n\n"
+                  ++ (T.unpack $ tempRepositoryChanges repo))
     where
-      localServerApi =
-          "http://127.0.0.1:" ++ show (fc_httpPort $ fs_config st) ++ "/posthook/" ++ (T.unpack $ toPathPiece repoId)
-      prefsFile = repoDir </> "_darcs" </> "prefs" </> "defaults"
+      targets =
+          case mTarget of
+            Just t ->
+                [T.unpack t]
+            Nothing ->
+                (map T.unpack (tempRepositoryNotifyEmail repo))
+      msg =
+          T.unpack $ fromMaybe "Nothing happened." (tempRepositoryBuildMessage repo)
+      subject =
+          if tempRepositoryBuildSuccess repo == Just True
+          then "[GOOD] The build of your patches was successful!"
+          else "[BAD] Failed to build your patches"
 
-launchBuild :: FrozoneState -> (FrozoneWorker () -> IO ()) -> TempRepositoryId -> TempRepository -> IO ()
-launchBuild st runAction repoId repo =
-    catch runBuild (\(e :: SomeException) -> buildFailed (show e))
+launchBuild :: FrozoneState
+            -> (forall a. SqlPersistT (NoLoggingT (ResourceT IO)) a -> IO a)
+            -> TempRepositoryId
+            -> TempRepository
+            -> IO ()
+launchBuild st ioSQL repoId repo =
+    finally (catch runBuild (\(e :: SomeException) -> buildFailed (show e))) notifyEveryone
     where
-      withDarcsChanges onErr fn =
-          withProgResult "darcs" onErr ["changes", "--repodir", tempRepositoryPath repo] fn
-
-      sendNotification subject msg =
-          do let mailTarget = T.unpack $ tempRepositoryNotifyEmail repo
-                 fireMail moreInfo =
-                     do doLog LogInfo ("Sending mail to " ++ mailTarget ++ ": " ++ subject)
-                        sendmail (Just "Frozone <thiemann@cp-med.com>") [ mailTarget ]
-                                     ("Subject: Frozone: " ++ subject ++ "\r\n" ++ msg ++ "\n\n" ++ moreInfo)
-             withDarcsChanges (\_ -> fireMail "darcs changes failed, so I have no Idea what patches are in you repo.") $ \changes ->
-                 fireMail ("Patches in repository:\n\n" ++ changes)
+      notifyEveryone =
+          do mRepo <- ioSQL $ DB.get repoId
+             case mRepo of
+               Just r ->
+                   sendNotifications Nothing r
+               Nothing ->
+                   doLog LogWarn ("Failed to send notifications! Repository vanished.")
 
       buildFailed reason =
           do doLog LogWarn ("Build " ++ show repoId
                             ++ " failed/crashed! Error: " ++ reason)
              _ <- ioSQL $ DB.update repoId [ TempRepositoryBuildSuccess =. (Just False)
-                                           , TempRepositoryBuildMessage =. (Just (T.pack reason))
+                                           , TempRepositoryBuildMessage =. (Just (T.pack $ "Build failed! \n\n" ++ reason))
                                            ]
-             sendNotification "[BAD] Build failed" ("Your build failed:\n\n " ++ reason)
              return ()
-
-      ioSQL = runAction . runSQL
 
       runBuild =
           do now <- getCurrentTime
@@ -139,21 +142,19 @@ launchBuild st runAction repoId repo =
           do doLog LogNote ("Starting to build " ++ show repoId)
              now <- getCurrentTime
              ioSQL $ DB.update repoId [TempRepositoryBuildStartedOn =. (Just now)]
-             withDarcsChanges (\_ -> buildFailed "darcs changes failed!") $ \changes ->
-                 do let dockerImageId = BSC.unpack $ B16.encode $ SHA1.hash $ BSC.pack changes
-                        imageName = "frozone/build-" ++ dockerImageId
-                    (ec, stdout, stderr) <-
-                        runProc "docker" ["build", "-rm", "-t", imageName, tempRepositoryPath repo]
-                    case ec of
-                      ExitFailure _ ->
-                          buildFailed (stdout ++ "\n \n" ++ stderr)
-                      ExitSuccess ->
-                          do doLog LogNote ("Dockerbuild of " ++ show repoId ++ " complete! Image: " ++ imageName)
-                             ioSQL $ DB.update repoId [ TempRepositoryBuildSuccess =. (Just True)
-                                                      , TempRepositoryBuildMessage =. (Just (T.pack stdout))
-                                                      , TempRepositoryDockerImage =. (Just (T.pack imageName))
-                                                      ]
-                             sendNotification "[GOOD] Build ok!" "Everything is cool, bro!"
+             let dockerImageId = BSC.unpack $ B16.encode $ SHA1.hash $ T.encodeUtf8 (tempRepositoryChanges repo)
+                 imageName = "frozone/build-" ++ dockerImageId
+             (ec, stdout, stderr) <-
+                 runProc "docker" ["build", "-rm", "-t", imageName, tempRepositoryPath repo]
+             case ec of
+               ExitFailure _ ->
+                   buildFailed (stdout ++ "\n \n" ++ stderr)
+               ExitSuccess ->
+                   do doLog LogNote ("Dockerbuild of " ++ show repoId ++ " complete! Image: " ++ imageName)
+                      ioSQL $ DB.update repoId [ TempRepositoryBuildSuccess =. (Just True)
+                                               , TempRepositoryBuildMessage =. (Just (T.pack $ "Build successed!\n\n" ++ stdout))
+                                               , TempRepositoryDockerImage =. (Just (T.pack imageName))
+                                               ]
 
 mkTempRepo :: String -> T.Text -> (FilePath -> FrozoneAction ()) -> FrozoneAction ()
 mkTempRepo repo email otherAction =
@@ -163,63 +164,60 @@ mkTempRepo repo email otherAction =
            withDarcs = withProgResult "darcs" (json . FrozoneError . T.pack)
        withDarcs ["get", "--lazy", repo, targetDir] $ \_ ->
            do now <- liftIO getCurrentTime
-              let rp =
-                      TempRepository
-                      { tempRepositoryBranch = T.pack repo
-                      , tempRepositoryPath = targetDir
-                      , tempRepositoryCreatedOn = now
-                      , tempRepositoryNotifyEmail = email
-                      , tempRepositoryBuildEnqueuedOn = Nothing
-                      , tempRepositoryBuildStartedOn = Nothing
-                      , tempRepositoryBuildSuccess = Nothing
-                      , tempRepositoryBuildMessage = Nothing
-                      , tempRepositoryDockerBaseImage = Nothing
-                      , tempRepositoryDockerImage = Nothing
-                      }
-              dbId <- runSQL $ DB.insert rp
-              liftIO $ createPosthook st dbId targetDir
               otherAction targetDir
-              json (FrozoneRepoCreated (T.pack targetDir))
+              withDarcs ["changes", "--repodir", targetDir] $ \changes ->
+                  do let changesHash =
+                             T.decodeUtf8 $ B16.encode $ SHA1.hash $ BSC.pack changes
+                         rp =
+                             TempRepository
+                             { tempRepositoryBranch = T.pack repo
+                             , tempRepositoryPath = targetDir
+                             , tempRepositoryCreatedOn = now
+                             , tempRepositoryNotifyEmail = [email]
+                             , tempRepositoryChanges = (T.pack changes)
+                             , tempRepositoryChangesHash = changesHash
+                             , tempRepositoryBuildEnqueuedOn = Nothing
+                             , tempRepositoryBuildStartedOn = Nothing
+                             , tempRepositoryBuildSuccess = Nothing
+                             , tempRepositoryBuildMessage = Nothing
+                             , tempRepositoryDockerBaseImage = Nothing
+                             , tempRepositoryDockerImage = Nothing
+                             }
+
+                     mRepo <- runSQL $ DB.getBy (UniqueChangesHash changesHash)
+                     case mRepo of
+                       Just sameRepoEntity ->
+                           let sameRepo = entityVal sameRepoEntity
+                               sameRepoId = entityKey sameRepoEntity
+                           in if isJust $ tempRepositoryBuildSuccess sameRepo
+                              then liftIO $
+                                   do doLog LogNote ("Build of " ++ show changesHash ++ " already completed. Sending results via email")
+                                      sendNotifications (Just email) sameRepo
+                              else do liftIO $ doLog LogNote ("Build of " ++ show changesHash ++ " in progress. Adding sender to notification list")
+                                      runSQL $ DB.update sameRepoId [ TempRepositoryNotifyEmail =. (email : tempRepositoryNotifyEmail sameRepo) ]
+                       Nothing ->
+                           do dbId <- runSQL $ DB.insert rp
+                              liftIO $ doLog LogNote ("Will schedule build for " ++ show changesHash ++ " (" ++ targetDir ++ ")")
+                              spockHeart <- getSpockHeart
+                              _ <- liftIO $ forkIO (launchBuild st (runSpockIO spockHeart . runSQL) dbId rp)
+                              return ()
+
+                     json (FrozoneMessage "Patchbundle recieved and enqueued for building")
 
 serverApp :: FrozoneApp
 serverApp =
-    do get "/posthook/:repoId" $
-         do repoId <- paramPathPiece "repoId"
-            mRepo <- runSQL $ DB.get repoId
-            case mRepo of
-              Nothing ->
-                  do liftIO $ doLog LogWarn ("Failed to run posthook! Unkown repo: " ++ show repoId)
-                     json (FrozoneError "Unknown repository!")
-              Just repo ->
-                  case tempRepositoryBuildEnqueuedOn repo of
-                    Just _ ->
-                        do liftIO $ doLog LogWarn ("Posthook for " ++ tempRepositoryPath repo
-                                                   ++ " called multiple times! Ignoring.")
-                           json (FrozoneError "Already called")
-                    Nothing ->
-                        do spockHeart <- getSpockHeart
-                           st <- getState
-                           liftIO $
-                             do doLog LogNote ("Will schedule build for " ++ tempRepositoryPath repo)
-                                _ <- forkIO (launchBuild st (runSpockIO spockHeart) repoId repo)
-                                return ()
-                           json (FrozoneMessage ("Triggering build in " `T.append` (T.pack $ tempRepositoryPath repo)))
-
-       post "/check-bundle" $
+    do post "/check-bundle" $
          do repo <- param "target-repo"
             email <- param "email"
             allFiles <- files
             case lookup "patch-bundle" allFiles of
               Just patchBundle ->
                   mkTempRepo repo email $ \repoPath ->
-                      do liftIO $ BS.writeFile (repoPath </> "patches.dpatch") (BSL.toStrict $ Wai.fileContent patchBundle)
-                         let withDarcs = withProgResult "darcs" (json . FrozoneError . T.pack)
-                         withDarcs ["apply", "--repodir", repoPath, repoPath </> "patches.dpatch"] $ \_ ->
+                      do let withDarcs = withProgResult "darcs" (json . FrozoneError . T.pack)
+                             bundleBs = BSL.toStrict $ Wai.fileContent patchBundle
+                             bundleLoc = repoPath </> "patches.dpatch"
+                         liftIO $ BS.writeFile bundleLoc bundleBs
+                         withDarcs ["apply", "--repodir", repoPath, bundleLoc] $ \_ ->
                              liftIO $ doLog LogInfo ("Patches applied!")
               Nothing ->
                   json (FrozoneError "No patch-bundle sent!")
-
-       post "/new-push-target" $
-         do repo <- param "target-repo"
-            email <- param "email"
-            mkTempRepo repo email (const $ return ())

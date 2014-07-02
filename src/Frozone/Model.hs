@@ -17,7 +17,9 @@ TempRepository
      branch T.Text
      path FilePath
      createdOn UTCTime
-     notifyEmail T.Text
+     notifyEmail [T.Text]
+     changes T.Text
+     changesHash T.Text
      buildEnqueuedOn UTCTime Maybe
      buildStartedOn UTCTime Maybe
      buildSuccess Bool Maybe
@@ -25,4 +27,5 @@ TempRepository
      dockerBaseImage T.Text Maybe
      dockerImage T.Text Maybe
      UniqueRepoPath path
+     UniqueChangesHash changesHash
 |]

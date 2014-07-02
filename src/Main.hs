@@ -1,31 +1,25 @@
 module Main where
 
-import Frozone.Types
 import Frozone.Server
 
-import Safe
 import System.Environment
+import qualified Data.Yaml as YML
 
 main :: IO ()
 main =
     do putStrLn "Welcome to Frozone"
        args <- getArgs
        case args of
-         (sqliteFile : storageDir : httpPort : []) ->
-             case readMay httpPort of
-               Just port ->
-                   let cfg =
-                           FrozoneConfig
-                           { fc_sqliteFile = sqliteFile
-                           , fc_storageDir = storageDir
-                           , fc_httpPort = port
-                           }
-                   in runServer cfg
-               Nothing ->
-                   do putStrLn "Invalid httpPort number!"
-                      usageP
+         (cfgFile : []) ->
+             do ymlResp <- YML.decodeFileEither cfgFile
+                case ymlResp of
+                  Left err ->
+                      do print err
+                         usageP
+                  Right cfg ->
+                      runServer cfg
          _ ->
              usageP
     where
       usageP =
-          putStrLn "Usage: ./Frozone [sqliteFile] [storageDir] [httpPort]"
+          putStrLn "Usage: ./Frozone [cfgFile]"

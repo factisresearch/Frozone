@@ -42,6 +42,7 @@ data RepoConfig
    , rc_cabalFile :: FilePath -- location of cabal file in repo
    } deriving (Show, Eq)
 
+$(deriveJSON (jDrop 3) ''FrozoneConfig)
 $(deriveJSON (jDrop 3) ''FrozoneMessage)
 $(deriveJSON (jDrop 3) ''FrozoneError)
 $(deriveJSON (jDrop 4) ''FrozoneRepoCreated)
