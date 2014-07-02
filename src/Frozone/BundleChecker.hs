@@ -45,13 +45,7 @@ bundleCheckAction =
        allFiles <- files
        case lookup "patch-bundle" allFiles of
          Just patchBundle ->
-             mkTempRepo repo email $ \repoPath ->
-                 do let withDarcs = withProgResult "darcs" (json . FrozoneError . T.pack)
-                        bundleBs = BSL.toStrict $ Wai.fileContent patchBundle
-                        bundleLoc = repoPath </> "patches.dpatch"
-                    liftIO $ BS.writeFile bundleLoc bundleBs
-                    withDarcs ["apply", "--repodir", repoPath, bundleLoc] $ \_ ->
-                        liftIO $ doLog LogInfo ("Patches applied!")
+             mkTempRepo repo email (BSL.toStrict $ Wai.fileContent patchBundle)
          Nothing ->
              json (FrozoneError "No patch-bundle sent!")
 
@@ -59,8 +53,8 @@ sendNotifications :: Maybe T.Text -> TempRepository -> IO ()
 sendNotifications mTarget repo =
     do doLog LogInfo ("Sending email '" ++ subject ++ "' to " ++ (intercalate ", " targets))
        sendmail (Just "Frozone <thiemann@cp-med.com>") targets
-                 ("Subject: Frozone: " ++ subject ++ "\r\n" ++ msg ++ "\n\n" ++ "Patches in repository:\n\n"
-                  ++ (T.unpack $ tempRepositoryChanges repo))
+                 ("Subject: Frozone: " ++ subject ++ "\r\n" ++ msg ++ "\n\n" ++ "Patchbundle:\n\n"
+                  ++ (T.unpack $ tempRepositoryPatchBundle repo))
     where
       targets =
           case mTarget of
@@ -135,8 +129,7 @@ launchBuild st ioSQL repoId repo =
           do doLog LogNote ("Starting to build " ++ show repoId)
              now <- getCurrentTime
              ioSQL $ DB.update repoId [TempRepositoryBuildStartedOn =. (Just now)]
-             let dockerImageId = BSC.unpack $ B16.encode $ SHA1.hash $ T.encodeUtf8 (tempRepositoryChanges repo)
-                 imageName = "frozone/build-" ++ dockerImageId
+             let imageName = "frozone/build-" ++ (T.unpack $ tempRepositoryChangesHash repo)
              (ec, stdout, stderr) <-
                  runProc "docker" ["build", "-rm", "-t", imageName, tempRepositoryPath repo]
              case ec of
@@ -149,15 +142,18 @@ launchBuild st ioSQL repoId repo =
                                                , TempRepositoryDockerImage =. (Just (T.pack imageName))
                                                ]
 
-mkTempRepo :: String -> T.Text -> (FilePath -> FrozoneAction ()) -> FrozoneAction ()
-mkTempRepo repo email otherAction =
+mkTempRepo :: String -> T.Text -> BS.ByteString -> FrozoneAction ()
+mkTempRepo repo email patchBundle =
     do st <- getState
        targetIdent <- liftIO $ randomB16Ident 10
        let targetDir = (fc_storageDir $ fs_config st) </> targetIdent
            withDarcs = withProgResult "darcs" (json . FrozoneError . T.pack)
        withDarcs ["get", "--lazy", repo, targetDir] $ \_ ->
            do now <- liftIO getCurrentTime
-              otherAction targetDir
+              let bundleLoc = targetDir </> "patches.dpatch"
+              liftIO $ BS.writeFile bundleLoc patchBundle
+              withDarcs ["apply", "--repodir", targetDir, bundleLoc] $ \_ ->
+                  liftIO $ doLog LogInfo ("Patches applied!")
               withDarcs ["changes", "--repodir", targetDir] $ \changes ->
                   do let changesHash =
                              T.decodeUtf8 $ B16.encode $ SHA1.hash $ BSC.pack changes
@@ -167,8 +163,8 @@ mkTempRepo repo email otherAction =
                              , tempRepositoryPath = targetDir
                              , tempRepositoryCreatedOn = now
                              , tempRepositoryNotifyEmail = [email]
-                             , tempRepositoryChanges = (T.pack changes)
                              , tempRepositoryChangesHash = changesHash
+                             , tempRepositoryPatchBundle = T.decodeUtf8 patchBundle
                              , tempRepositoryBuildEnqueuedOn = Nothing
                              , tempRepositoryBuildStartedOn = Nothing
                              , tempRepositoryBuildSuccess = Nothing

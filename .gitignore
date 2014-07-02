@@ -10,3 +10,6 @@ cabal-dev
 cabal.sandbox.config
 cabal.config
 scratch
+static/js/out/*.js
+static/js/out/.module-cache
+.DS_Store

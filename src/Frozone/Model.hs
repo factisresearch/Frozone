@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Frozone.Model where
 
 import Database.Persist.TH
@@ -13,13 +14,13 @@ import Data.Time
 import qualified Data.Text as T
 
 share [mkPersist sqlSettings, mkMigrate "migrateCore"] [persistLowerCase|
-TempRepository
+TempRepository json
      branch T.Text
      path FilePath
      createdOn UTCTime
      notifyEmail [T.Text]
-     changes T.Text
      changesHash T.Text
+     patchBundle T.Text
      buildEnqueuedOn UTCTime Maybe
      buildStartedOn UTCTime Maybe
      buildSuccess Bool Maybe

@@ -7,10 +7,13 @@ module Frozone.Server where
 import Frozone.Types
 import Frozone.Model
 import Frozone.BundleChecker
+import Frozone.RestApi
+import Frozone.WebFrontend
 
 import Control.Concurrent.STM
 import Control.Monad.Logger
 import Database.Persist.Sqlite (createSqlitePool, runSqlPool, runMigration)
+import Network.Wai.Middleware.Static
 import Web.Spock
 import qualified Data.HashSet as HS
 import qualified Data.Text as T
@@ -33,4 +36,7 @@ runServer fc =
 
 serverApp :: FrozoneApp
 serverApp =
-    post "/check-bundle" bundleCheckAction
+    do middleware (staticPolicy (addBase "static"))
+       get "/" indexPage
+       post "/check-bundle" bundleCheckAction
+       restApi
