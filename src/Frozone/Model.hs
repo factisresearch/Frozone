@@ -18,10 +18,11 @@ TempRepository
      path FilePath
      createdOn UTCTime
      notifyEmail T.Text
+     buildEnqueuedOn UTCTime Maybe
      buildStartedOn UTCTime Maybe
      buildSuccess Bool Maybe
      buildMessage T.Text Maybe
+     dockerBaseImage T.Text Maybe
      dockerImage T.Text Maybe
-     dockerContainer T.Text Maybe
      UniqueRepoPath path
 |]

@@ -104,7 +104,9 @@ launchBuild st runAction repoId repo =
       ioSQL = runAction . runSQL
 
       runBuild =
-          do yml <- YML.decodeFileEither (tempRepositoryPath repo </> ".frozone.yml")
+          do now <- getCurrentTime
+             ioSQL $ DB.update repoId [TempRepositoryBuildEnqueuedOn =. (Just now)]
+             yml <- YML.decodeFileEither (tempRepositoryPath repo </> ".frozone.yml")
              case yml of
                Left parseException ->
                    buildFailed ("Error in .frozone.yml: " ++ show parseException)
@@ -128,6 +130,7 @@ launchBuild st runAction repoId repo =
              then do dockerfile <- T.readFile dockerPath
                      if T.isInfixOf baseImgTag dockerfile
                      then do T.writeFile dockerPath (T.replace baseImgTag baseImage dockerfile)
+                             ioSQL $ DB.update repoId [TempRepositoryDockerBaseImage =. (Just baseImage)]
                              runDockerBuild
                      else buildFailed ("Missing 'FROM " ++ (T.unpack baseImgTag) ++ "' in your Dockerfile!")
              else buildFailed "Missing a Dockerfile in your Repository root."
@@ -166,11 +169,12 @@ mkTempRepo repo email otherAction =
                       , tempRepositoryPath = targetDir
                       , tempRepositoryCreatedOn = now
                       , tempRepositoryNotifyEmail = email
+                      , tempRepositoryBuildEnqueuedOn = Nothing
                       , tempRepositoryBuildStartedOn = Nothing
                       , tempRepositoryBuildSuccess = Nothing
                       , tempRepositoryBuildMessage = Nothing
+                      , tempRepositoryDockerBaseImage = Nothing
                       , tempRepositoryDockerImage = Nothing
-                      , tempRepositoryDockerContainer = Nothing
                       }
               dbId <- runSQL $ DB.insert rp
               liftIO $ createPosthook st dbId targetDir
@@ -187,7 +191,7 @@ serverApp =
                   do liftIO $ doLog LogWarn ("Failed to run posthook! Unkown repo: " ++ show repoId)
                      json (FrozoneError "Unknown repository!")
               Just repo ->
-                  case tempRepositoryBuildStartedOn repo of
+                  case tempRepositoryBuildEnqueuedOn repo of
                     Just _ ->
                         do liftIO $ doLog LogWarn ("Posthook for " ++ tempRepositoryPath repo
                                                    ++ " called multiple times! Ignoring.")
