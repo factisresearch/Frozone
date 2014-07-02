@@ -29,7 +29,7 @@ ensureBaseImageExists repoCfg cabalFile =
                      cabalPkgInstall =
                          [ DockerRun "mkdir -p /cabalpkg"
                          , DockerAdd "cabalfile.cabal" "/cabalpkg/cabalfile.cabal"
-                         , DockerRun "cd /cabalpkg && cabal install --only-dependencies"
+                         , DockerRun "cd /cabalpkg && cabal install -v3 --only-dependencies"
                          , DockerRun "rm -rf /cabalpkg"
                          ]
                      baseImage' = baseImage { d_cmds = (d_cmds baseImage) ++ cabalPkgInstall }
