@@ -40,7 +40,7 @@ executable Frozone
                        text >=1.1 && <1.2,
                        time >=1.4 && <1.5,
                        unordered-containers >=0.2 && <0.3,
-                       wai-extra >=2.0 && <2.1,
+                       wai-extra >=2.0 && <3.0,
                        wai-middleware-static >=0.5 && <0.6,
                        yaml >=0.8 && <0.9
   hs-source-dirs:      src
