@@ -12,3 +12,5 @@ Frozone
 * Better README
 * Usage examples
 * Continous deployment
+* Dockerize
+* Hooks (Post-success, etc.)
