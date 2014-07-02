@@ -33,6 +33,9 @@ import qualified Data.Text.IO as T
 import qualified Data.Yaml as YML
 import qualified Database.Persist as DB
 import qualified Network.HTTP.Types.Status as Http
+import qualified Crypto.Hash.SHA1 as SHA1
+import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Base16 as B16
 
 type FrozoneApp = SpockM Connection () FrozoneConfig ()
 type FrozoneAction a = SpockAction Connection () FrozoneConfig a
@@ -72,12 +75,17 @@ launchBuild :: (FrozoneWorker () -> IO ()) -> TempRepositoryId -> TempRepository
 launchBuild runAction repoId repo =
     catch runBuild (\(e :: SomeException) -> buildFailed (show e))
     where
+      withDarcsChanges onErr fn =
+          withProgResult "darcs" onErr ["changes", "--repodir", tempRepositoryPath repo] fn
+
       sendNotification subject msg =
           do let mailTarget = T.unpack $ tempRepositoryNotifyEmail repo
-             doLog LogNote ("Sending mail '" ++ subject ++ "' to " ++ mailTarget ++ ".. ")
-             withProgResult "darcs" (\e -> doLog LogError "darcs changes failed!") ["changes", "--repodir", tempRepositoryPath repo] $ \changes ->
-                 sendmail (Just "Frozone <thiemann@cp-med.com>") [ mailTarget ]
-                              ("Subject: Frozone: " ++ subject ++ "\r\n" ++ msg ++ "\n\nPatches in repository:\n\n" ++ changes)
+                 fireMail moreInfo =
+                     do doLog LogInfo ("Sending mail to " ++ mailTarget ++ ": " ++ subject)
+                        sendmail (Just "Frozone <thiemann@cp-med.com>") [ mailTarget ]
+                                     ("Subject: Frozone: " ++ subject ++ "\r\n" ++ msg ++ "\n\n" ++ moreInfo)
+             withDarcsChanges (\_ -> fireMail "darcs changes failed, so I have no Idea what patches are in you repo.") $ \changes ->
+                 fireMail ("Patches in repository:\n\n" ++ changes)
 
       buildFailed reason =
           do doLog LogWarn ("Build " ++ show repoId
@@ -87,7 +95,9 @@ launchBuild runAction repoId repo =
                                            ]
              sendNotification "[BAD] Build failed" ("Your build failed:\n\n " ++ reason)
              return ()
+
       ioSQL = runAction . runSQL
+
       runBuild =
           do yml <- YML.decodeFileEither (tempRepositoryPath repo </> ".frozone.yml")
              case yml of
@@ -104,6 +114,7 @@ launchBuild runAction repoId repo =
                                 Right baseImage ->
                                     prepareDockerFile baseImage
                       else buildFailed ("Your cabal file " ++ rc_cabalFile repoCfg ++ "doesn't exist")
+
       prepareDockerFile baseImage =
           do let dockerPath = (tempRepositoryPath repo </> "Dockerfile")
                  baseImgTag = "$$BASE_IMAGE_$$"
@@ -120,20 +131,21 @@ launchBuild runAction repoId repo =
           do doLog LogNote ("Starting to build " ++ show repoId)
              now <- getCurrentTime
              ioSQL $ DB.update repoId [TempRepositoryBuildStartedOn =. (Just now)]
-             dockerImageId <- randomB16Ident 10
-             let imageName = "frozone/" ++ dockerImageId
-             (ec, stdout, stderr) <-
-                 runProc "docker" ["build", "-rm", "-t", imageName, tempRepositoryPath repo]
-             case ec of
-               ExitFailure _ ->
-                   buildFailed (stdout ++ "\n \n" ++ stderr)
-               ExitSuccess ->
-                   do doLog LogNote ("Dockerbuild of " ++ show repoId ++ " complete! Image: " ++ imageName)
-                      ioSQL $ DB.update repoId [ TempRepositoryBuildSuccess =. (Just True)
-                                               , TempRepositoryBuildMessage =. (Just (T.pack stdout))
-                                               , TempRepositoryDockerImage =. (Just (T.pack imageName))
-                                               ]
-                      sendNotification "[GOOD] Build ok!" "Everything is cool, bro!"
+             withDarcsChanges (\_ -> buildFailed "darcs changes failed!") $ \changes ->
+                 do let dockerImageId = BSC.unpack $ B16.encode $ SHA1.hash $ BSC.pack changes
+                        imageName = "frozone/" ++ dockerImageId
+                    (ec, stdout, stderr) <-
+                        runProc "docker" ["build", "-rm", "-t", imageName, tempRepositoryPath repo]
+                    case ec of
+                      ExitFailure _ ->
+                          buildFailed (stdout ++ "\n \n" ++ stderr)
+                      ExitSuccess ->
+                          do doLog LogNote ("Dockerbuild of " ++ show repoId ++ " complete! Image: " ++ imageName)
+                             ioSQL $ DB.update repoId [ TempRepositoryBuildSuccess =. (Just True)
+                                                      , TempRepositoryBuildMessage =. (Just (T.pack stdout))
+                                                      , TempRepositoryDockerImage =. (Just (T.pack imageName))
+                                                      ]
+                             sendNotification "[GOOD] Build ok!" "Everything is cool, bro!"
 serverApp :: FrozoneApp
 serverApp =
     do get "/posthook/:repoId" $
