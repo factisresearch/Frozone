@@ -104,7 +104,7 @@ generateImage repoCfg =
             Nothing -> []
             Just repo ->
                 let repoUrl = T.replace "/" "\\/" repo
-                in [ DockerRun (T.concat ["sed -E 's/(-- )?(remote-repo: ).*/\2frozone:",repoUrl,"/' -i .cabal/config"])
+                in [ DockerRun (T.concat ["sed -E 's/(-- )?(remote-repo: ).*/\\2frozone:",repoUrl,"/' -i .cabal/config"])
                    , DockerRun "cabal update"
                    ]
 
