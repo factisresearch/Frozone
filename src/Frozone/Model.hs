@@ -11,7 +11,6 @@ import Database.Persist.TH
 import Data.Time
 
 import qualified Data.Text as T
-import qualified Data.ByteString as BS
 
 share [mkPersist sqlSettings, mkMigrate "migrateCore"] [persistLowerCase|
 TempRepository

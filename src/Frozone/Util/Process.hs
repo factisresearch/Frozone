@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 module Frozone.Util.Process where
 
 import Frozone.Util.Logging
@@ -8,6 +9,7 @@ import Data.List (intercalate)
 import System.Exit
 import System.Process
 
+runProc :: String -> [String] -> IO (ExitCode, String, String)
 runProc p args =
     do doLog LogNote (p ++ " " ++ (intercalate " " args))
        d@(ec, stdout, stderr) <- readProcessWithExitCode p args ""
@@ -18,6 +20,8 @@ runProc p args =
              doLog LogError stderr
        return d
 
+withProgResult :: forall m a. MonadIO m
+               => String -> (String -> m a) -> [String] -> (String -> m a) -> m a
 withProgResult p errHandler cmd onSuccess =
     do (ec, resp, stderr) <- liftIO $ runProc p cmd
        case ec of

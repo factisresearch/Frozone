@@ -15,16 +15,12 @@ import Control.Exception
 import Control.Monad.Logger
 import Control.Monad.Trans
 import Control.Monad.Trans.Resource
-import Data.List
 import Data.Time
-import Database.Persist ((=.))
 import Database.Persist.Sqlite hiding (get)
 import Network.Email.Sendmail
 import System.Directory
 import System.Exit
 import System.FilePath
-import System.IO.Temp
-import System.Process
 import Web.PathPieces
 import Web.Spock
 import qualified Data.ByteString as BS
@@ -32,7 +28,6 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Yaml as YML
 import qualified Database.Persist as DB
-import qualified Network.HTTP.Types.Status as Http
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Base16 as B16

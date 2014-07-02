@@ -18,7 +18,7 @@ import qualified Data.Text.IO as T
 
 ensureBaseImageExists :: RepoConfig -> BS.ByteString -> IO (Either String T.Text)
 ensureBaseImageExists repoCfg cabalFile =
-    do (ec, stdOut, stdErr) <- runProc "docker" ["images"]
+    do (ec, stdOut, _) <- runProc "docker" ["images"]
        if ec == ExitSuccess && (T.isInfixOf imageName (T.pack stdOut))
        then return $ Right imageName
        else buildImage

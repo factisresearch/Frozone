@@ -40,3 +40,4 @@ executable Frozone
                        yaml >=0.8 && <0.9,
                        cryptohash >=0.11 && <0.12
   hs-source-dirs:      src
+  ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures

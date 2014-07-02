@@ -95,5 +95,5 @@ serializeDockerfile dockerfile =
                 dockerLine "USER" [usr]
             DockerWorkDir wd ->
                 dockerLine "WORKDIR" [T.pack wd]
-            DockerOnBuild cmd ->
-                dockerLine "ONBUILD" [serializeCmd cmd]
+            DockerOnBuild onbuild ->
+                dockerLine "ONBUILD" [serializeCmd onbuild]
