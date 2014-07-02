@@ -4,8 +4,14 @@ module Frozone.Types where
 import Frozone.Util.Json
 
 import Control.Concurrent.STM
+import Database.Persist.Sql
+import Web.Spock
 import qualified Data.HashSet as HS
 import qualified Data.Text as T
+
+type FrozoneApp = SpockM Connection () FrozoneState ()
+type FrozoneAction a = SpockAction Connection () FrozoneState a
+type FrozoneWorker a = WebStateM Connection () FrozoneState a
 
 data FrozoneConfig
    = FrozoneConfig
