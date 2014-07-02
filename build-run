@@ -1,0 +1,2 @@
+#!/bin/bash
+jsx jssrc/ static/js/out && cabal build && dist/build/Frozone/Frozone config.yml
