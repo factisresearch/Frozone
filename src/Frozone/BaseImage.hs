@@ -79,7 +79,7 @@ generateImage repoCfg =
           DockerRun (T.concat ["apt-get install -y ", T.intercalate " " pkgs])
 
       cmds =
-          coreCmds ++ ghcCmds ++ cabalCmds ++ (map (\sh -> DockerRun sh) (rc_shellCmds repoCfg))
+          coreCmds ++ ghcCmds ++ cabalCmds ++ cabalRepoCmds ++ (map (\sh -> DockerRun sh) (rc_shellCmds repoCfg))
 
       ghcCmds =
           [ DockerRun (T.concat ["wget -O ghc.tar.bz2 http://www.haskell.org/ghc/dist/", ghcV, "/ghc-", ghcV, "-x86_64-unknown-linux.tar.bz2"])
