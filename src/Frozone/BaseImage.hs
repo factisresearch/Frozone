@@ -5,24 +5,43 @@ module Frozone.BaseImage (ensureBaseImageExists) where
 import Frozone.Types
 import Frozone.Util.Docker
 import Frozone.Util.Process
+import Frozone.Util.Logging
 
+import Control.Concurrent.STM
+import Control.Exception
+import Control.Monad
 import System.Exit
 import System.FilePath
 import System.IO.Temp
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
+import qualified Data.HashSet as HS
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 
-ensureBaseImageExists :: RepoConfig -> BS.ByteString -> IO (Either String T.Text)
-ensureBaseImageExists repoCfg cabalFile =
-    do (ec, stdOut, _) <- runProc "docker" ["images"]
-       if ec == ExitSuccess && (T.isInfixOf imageName (T.pack stdOut))
-       then return $ Right imageName
-       else buildImage
+type InProgressVar
+    = TVar (HS.HashSet T.Text)
+
+ensureBaseImageExists :: InProgressVar -> RepoConfig -> BS.ByteString -> IO (Either String T.Text)
+ensureBaseImageExists progressVar repoCfg cabalFile =
+    do doLog LogInfo ("Checking if " ++ (T.unpack imageName) ++ " is being built. If so, wait for it to complete.")
+       atomically $
+         do inProgress <- readTVar progressVar
+            when (HS.member imageName inProgress) $ retry
+            modifyTVar progressVar (HS.insert imageName)
+       finally runBuild removeFromProgress
     where
+      removeFromProgress =
+          atomically $ modifyTVar progressVar (HS.delete imageName)
+      runBuild =
+          do (ec, stdOut, _) <- runProc "docker" ["images"]
+             if ec == ExitSuccess && (T.isInfixOf imageName (T.pack stdOut))
+             then do doLog LogInfo (T.unpack imageName ++ " is already built. Will use it.")
+                     return $ Right imageName
+             else do doLog LogInfo (T.unpack imageName ++ " is not built yet - will build it now...")
+                     buildImage
       buildImage =
           withSystemTempDirectory "frozoneDockerBuild" $ \fp ->
               do let baseImage = generateImage repoCfg

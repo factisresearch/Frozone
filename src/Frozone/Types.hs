@@ -2,6 +2,9 @@
 module Frozone.Types where
 
 import Frozone.Util.Json
+
+import Control.Concurrent.STM
+import qualified Data.HashSet as HS
 import qualified Data.Text as T
 
 data FrozoneConfig
@@ -9,6 +12,12 @@ data FrozoneConfig
    { fc_sqliteFile :: FilePath
    , fc_storageDir :: FilePath
    , fc_httpPort :: Int
+   }
+
+data FrozoneState
+   = FrozoneState
+   { fs_config :: FrozoneConfig
+   , fs_baseImageBuildsVar :: TVar (HS.HashSet T.Text)
    }
 
 data FrozoneMessage
