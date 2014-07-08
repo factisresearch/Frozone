@@ -15,13 +15,16 @@ import Control.Monad.Logger
 import Database.Persist.Sqlite (createSqlitePool, runSqlPool, runMigration)
 import Network.Wai.Middleware.Static
 import Web.Spock
+import Control.Monad.Trans.Resource
 import qualified Data.HashSet as HS
 import qualified Data.Text as T
 
 runServer :: FrozoneConfig -> IO ()
 runServer fc =
     do pool <- createSqlitePool (T.pack $ fc_sqliteFile fc) 5
-       runNoLoggingT $ runSqlPool (runMigration migrateCore) pool
+       runResourceT $ runNoLoggingT $ (flip runSqlPool) pool $
+          do runMigration migrateCore
+             closeDangelingActions
        baseImageBuildsVar <- newTVarIO HS.empty
        let fcState =
                FrozoneState

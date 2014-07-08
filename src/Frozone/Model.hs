@@ -23,8 +23,11 @@ TempRepository json
      patchBundle T.Text
      buildEnqueuedOn UTCTime Maybe
      buildStartedOn UTCTime Maybe
-     buildSuccess Bool Maybe
-     buildMessage T.Text Maybe
+     buildFailedOn UTCTime Maybe
+     buildSuccessOn UTCTime Maybe
+     buildMessage T.Text
+     patchCanceledOn UTCTime Maybe
+     patchCancelReason T.Text Maybe
      dockerBaseImage T.Text Maybe
      dockerImage T.Text Maybe
      UniqueRepoPath path

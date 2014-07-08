@@ -1,13 +1,30 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Frozone.Util.Process where
 
 import Frozone.Util.Logging
 
+import Control.Exception
+import Data.Conduit
+import Data.Conduit.Process
 import Control.Monad.Trans
 import Data.List (intercalate)
 import System.Exit
 import System.Process
+import qualified Data.ByteString as BS
+
+runConduitProc :: String -> [String]
+               -> (Consumer BS.ByteString (ResourceT IO) ())
+               -> IO ExitCode
+runConduitProc p args consumer =
+    actionRunner `catch` (\(exitCode :: ExitCode) -> return exitCode)
+    where
+      procSpec = proc p args
+      actionRunner =
+          do doLog LogNote (p ++ " " ++ (intercalate " " args))
+             runResourceT $ sourceProcess procSpec $$ consumer
+             return ExitSuccess
 
 runProc :: String -> [String] -> IO (ExitCode, String, String)
 runProc p args =

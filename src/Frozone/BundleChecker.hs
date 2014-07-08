@@ -38,6 +38,17 @@ import qualified Data.Yaml as YML
 import qualified Database.Persist as DB
 import qualified Network.Wai.Parse as Wai
 
+closeDangelingActions :: (MonadIO m, PersistQuery m, MonadSqlPersist m) => m ()
+closeDangelingActions =
+    do liftIO (doLog LogInfo "Fixing dangeling actions...")
+       now <- liftIO getCurrentTime
+       DB.updateWhere [ TempRepositoryBuildStartedOn !=. Nothing
+                      , TempRepositoryBuildFailedOn ==. Nothing
+                      , TempRepositoryBuildSuccessOn ==. Nothing
+                      ] [ TempRepositoryPatchCanceledOn =. (Just now)
+                        , TempRepositoryPatchCancelReason =. (Just "Was dangeling after Frozone restart")
+                        ]
+
 bundleCheckAction :: FrozoneAction ()
 bundleCheckAction =
     do repo <- param "target-repo"
@@ -63,9 +74,9 @@ sendNotifications mTarget repo =
             Nothing ->
                 (map T.unpack (tempRepositoryNotifyEmail repo))
       msg =
-          T.unpack $ fromMaybe "Nothing happened." (tempRepositoryBuildMessage repo)
+          T.unpack (tempRepositoryBuildMessage repo)
       subject =
-          if tempRepositoryBuildSuccess repo == Just True
+          if isJust (tempRepositoryBuildSuccessOn repo)
           then "[GOOD] The build of your patches was successful!"
           else "[BAD] Failed to build your patches"
 
@@ -86,10 +97,11 @@ launchBuild st ioSQL repoId repo =
                    doLog LogWarn ("Failed to send notifications! Repository vanished.")
 
       buildFailed reason =
-          do doLog LogWarn ("Build " ++ show repoId
+          do now <- getCurrentTime
+             doLog LogWarn ("Build " ++ show repoId
                             ++ " failed/crashed! Error: " ++ reason)
-             _ <- ioSQL $ DB.update repoId [ TempRepositoryBuildSuccess =. (Just False)
-                                           , TempRepositoryBuildMessage =. (Just (T.pack $ "Build failed! \n\n" ++ reason))
+             _ <- ioSQL $ DB.update repoId [ TempRepositoryBuildFailedOn =. (Just now)
+                                           , TempRepositoryBuildMessage =. (T.pack $ "Build failed! \n\n" ++ reason)
                                            ]
              return ()
 
@@ -137,8 +149,9 @@ launchBuild st ioSQL repoId repo =
                    buildFailed (stdout ++ "\n \n" ++ stderr)
                ExitSuccess ->
                    do doLog LogNote ("Dockerbuild of " ++ show repoId ++ " complete! Image: " ++ imageName)
-                      ioSQL $ DB.update repoId [ TempRepositoryBuildSuccess =. (Just True)
-                                               , TempRepositoryBuildMessage =. (Just (T.pack $ "Build successed!\n\n" ++ stdout))
+                      now' <- getCurrentTime
+                      ioSQL $ DB.update repoId [ TempRepositoryBuildSuccessOn =. (Just now')
+                                               , TempRepositoryBuildMessage =. (T.pack $ "Build successed!\n\n" ++ stdout)
                                                , TempRepositoryDockerImage =. (Just (T.pack imageName))
                                                ]
 
@@ -167,28 +180,47 @@ mkTempRepo repo email patchBundle =
                              , tempRepositoryPatchBundle = T.decodeUtf8 patchBundle
                              , tempRepositoryBuildEnqueuedOn = Nothing
                              , tempRepositoryBuildStartedOn = Nothing
-                             , tempRepositoryBuildSuccess = Nothing
-                             , tempRepositoryBuildMessage = Nothing
+                             , tempRepositoryBuildFailedOn = Nothing
+                             , tempRepositoryBuildSuccessOn = Nothing
+                             , tempRepositoryBuildMessage = ""
+                             , tempRepositoryPatchCanceledOn = Nothing
+                             , tempRepositoryPatchCancelReason = Nothing
                              , tempRepositoryDockerBaseImage = Nothing
                              , tempRepositoryDockerImage = Nothing
                              }
 
                      mRepo <- runSQL $ DB.getBy (UniqueChangesHash changesHash)
+                     let scheduleBuild dbId =
+                          do liftIO $ doLog LogNote ("Will schedule build for " ++ show changesHash ++ " (" ++ targetDir ++ ")")
+                             spockHeart <- getSpockHeart
+                             _ <- liftIO $ forkIO (launchBuild st (runSpockIO spockHeart . runSQL) dbId rp)
+                             return ()
+
                      case mRepo of
                        Just sameRepoEntity ->
                            let sameRepo = entityVal sameRepoEntity
                                sameRepoId = entityKey sameRepoEntity
-                           in if isJust $ tempRepositoryBuildSuccess sameRepo
-                              then liftIO $
-                                   do doLog LogNote ("Build of " ++ show changesHash ++ " already completed. Sending results via email")
-                                      sendNotifications (Just email) sameRepo
-                              else do liftIO $ doLog LogNote ("Build of " ++ show changesHash ++ " in progress. Adding sender to notification list")
-                                      runSQL $ DB.update sameRepoId [ TempRepositoryNotifyEmail =. (email : tempRepositoryNotifyEmail sameRepo) ]
+                           in if (isJust $ tempRepositoryPatchCanceledOn sameRepo)
+                              then do runSQL $ DB.update sameRepoId [ TempRepositoryNotifyEmail =. nub (email : tempRepositoryNotifyEmail sameRepo)
+                                                                    , TempRepositoryBuildEnqueuedOn =. Nothing
+                                                                    , TempRepositoryBuildStartedOn =. Nothing
+                                                                    , TempRepositoryBuildFailedOn =. Nothing
+                                                                    , TempRepositoryBuildSuccessOn =. Nothing
+                                                                    , TempRepositoryBuildMessage =. ""
+                                                                    , TempRepositoryPatchCanceledOn =. Nothing
+                                                                    , TempRepositoryPatchCancelReason =. Nothing
+                                                                    , TempRepositoryDockerBaseImage =. Nothing
+                                                                    , TempRepositoryDockerImage =. Nothing
+                                                                    ]
+                                      scheduleBuild sameRepoId
+                              else if (isJust (tempRepositoryBuildSuccessOn sameRepo) || isJust (tempRepositoryBuildFailedOn sameRepo))
+                                   then liftIO $
+                                        do doLog LogNote ("Build of " ++ show changesHash ++ " already completed. Sending results via email")
+                                           sendNotifications (Just email) sameRepo
+                                   else do liftIO $ doLog LogNote ("Build of " ++ show changesHash ++ " in progress. Adding sender to notification list")
+                                           runSQL $ DB.update sameRepoId [ TempRepositoryNotifyEmail =. nub (email : tempRepositoryNotifyEmail sameRepo) ]
                        Nothing ->
                            do dbId <- runSQL $ DB.insert rp
-                              liftIO $ doLog LogNote ("Will schedule build for " ++ show changesHash ++ " (" ++ targetDir ++ ")")
-                              spockHeart <- getSpockHeart
-                              _ <- liftIO $ forkIO (launchBuild st (runSpockIO spockHeart . runSQL) dbId rp)
-                              return ()
+                              scheduleBuild dbId
 
                      json (FrozoneMessage "Patchbundle recieved and enqueued for building")
