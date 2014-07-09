@@ -12,6 +12,7 @@ import Frozone.Util.Random
 import Frozone.Util.Process
 import Frozone.Util.Db
 
+import Control.Applicative
 import Control.Concurrent
 import Control.Exception
 import Control.Monad.Logger
@@ -31,6 +32,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BSL
+import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
@@ -155,6 +157,76 @@ launchBuild st ioSQL repoId repo =
                                                , TempRepositoryDockerImage =. (Just (T.pack imageName))
                                                ]
 
+data FileChangeAction
+   = FileChangeCreated
+   | FileChangeModified
+   | FileChangeDeleted
+   deriving (Show, Eq)
+
+type FileChangeMap = HM.HashMap FilePath FileChangeAction
+
+getFileChangeInfo :: BS.ByteString -> FileChangeMap
+getFileChangeInfo bundleBS =
+    foldl handleLine HM.empty (BSC.split '\n' bundleBS)
+    where
+      handleLine hm bs =
+          if BS.isPrefixOf "] " bs
+          then handleLine' hm (BS.drop 2 bs)
+          else handleLine' hm bs
+      handleLine' hm bs
+          | BS.isPrefixOf "hunk" bs =
+              case splitBS of
+                ["hunk", filename, _] ->
+                    HM.insertWith (\new old -> if old == FileChangeCreated then old else new) (BSC.unpack filename) FileChangeModified hm
+                _ -> hm
+          | BS.isPrefixOf "rmfile" bs =
+              case splitBS of
+                ["rmfile", filename] ->
+                    HM.insert (BSC.unpack filename) FileChangeDeleted hm
+                _ -> hm
+          | BS.isPrefixOf "addfile" bs =
+              case splitBS of
+                ["addfile", filename] ->
+                    HM.insert (BSC.unpack filename) FileChangeCreated hm
+                _ -> hm
+          | otherwise = hm
+          where
+            splitBS = BSC.split ' ' bs
+
+loadChangeInfo :: FileChangeMap
+               -> FilePath
+               -> (FilePath -> FileChangeAction -> IO (Maybe T.Text))
+               -> IO (HM.HashMap FilePath (Maybe T.Text))
+loadChangeInfo changeMap repoDir loadStrategy =
+    HM.fromList <$> mapM getLocalContent (HM.toList changeMap)
+    where
+      getLocalContent (fp, fa) =
+          do mCt <- loadStrategy (repoDir </> fp) fa
+             return (fp, mCt)
+
+preApplyContent :: FilePath -> FileChangeAction -> IO (Maybe T.Text)
+preApplyContent _ FileChangeCreated = return Nothing
+preApplyContent fp _ =
+    Just <$> T.readFile fp
+
+postApplyContent :: FilePath -> FileChangeAction -> IO (Maybe T.Text)
+postApplyContent _ FileChangeDeleted = return Nothing
+postApplyContent fp _ =
+    Just <$> T.readFile fp
+
+generateBundleChanges :: TempRepositoryId
+                      -> HM.HashMap FilePath (Maybe T.Text)
+                      -> HM.HashMap FilePath (Maybe T.Text)
+                      -> [BundleChange]
+generateBundleChanges repoId preApply postApply =
+    map (\(fp, mCt) ->
+             case HM.lookup fp postApply of
+               Nothing ->
+                   error $ "generateBundleChanges failed! Missing file " ++ fp ++ " in post-apply repo!"
+               Just mNewCt ->
+                   BundleChange fp mCt mNewCt repoId
+        ) (HM.toList preApply)
+
 mkTempRepo :: String -> T.Text -> BS.ByteString -> FrozoneAction ()
 mkTempRepo repo email patchBundle =
     do st <- getState
@@ -164,6 +236,8 @@ mkTempRepo repo email patchBundle =
        withDarcs ["get", "--lazy", repo, targetDir] $ \_ ->
            do now <- liftIO getCurrentTime
               let bundleLoc = targetDir </> "patches.dpatch"
+                  changeMap = getFileChangeInfo patchBundle
+              preApply <- liftIO $ loadChangeInfo changeMap targetDir preApplyContent
               liftIO $ BS.writeFile bundleLoc patchBundle
               withDarcs ["apply", "--repodir", targetDir, bundleLoc] $ \_ ->
                   liftIO $ doLog LogInfo ("Patches applied!")
@@ -195,7 +269,6 @@ mkTempRepo repo email patchBundle =
                              spockHeart <- getSpockHeart
                              _ <- liftIO $ forkIO (launchBuild st (runSpockIO spockHeart . runSQL) dbId rp)
                              return ()
-
                      case mRepo of
                        Just sameRepoEntity ->
                            let sameRepo = entityVal sameRepoEntity
@@ -220,7 +293,11 @@ mkTempRepo repo email patchBundle =
                                    else do liftIO $ doLog LogNote ("Build of " ++ show changesHash ++ " in progress. Adding sender to notification list")
                                            runSQL $ DB.update sameRepoId [ TempRepositoryNotifyEmail =. nub (email : tempRepositoryNotifyEmail sameRepo) ]
                        Nothing ->
-                           do dbId <- runSQL $ DB.insert rp
+                           do postApply <- liftIO $ loadChangeInfo changeMap targetDir postApplyContent
+                              dbId <-
+                                  do repoId <- runSQL $ DB.insert rp
+                                     _ <- runSQL $ DB.insertMany (generateBundleChanges repoId preApply postApply)
+                                     return repoId
                               scheduleBuild dbId
 
                      json (FrozoneMessage "Patchbundle recieved and enqueued for building")

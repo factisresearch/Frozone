@@ -9,7 +9,7 @@ import Frozone.Util.Db
 import Control.Monad.Trans
 import Data.Time
 import Web.Spock
-import Database.Persist ((=.))
+import Database.Persist ((=.), (==.))
 import qualified Database.Persist as DB
 
 restApi :: FrozoneApp
@@ -35,3 +35,8 @@ restApi =
                   json (FrozoneError "Build not found!")
               Just build ->
                   json build
+
+       get "/api/build/:buildId/file-changes" $
+         do (buildId :: TempRepositoryId) <- paramPathPiece "buildId"
+            allChanges <- runSQL $ DB.selectList [BundleChangeRepoId ==. buildId] []
+            json allChanges

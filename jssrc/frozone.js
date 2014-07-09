@@ -149,6 +149,7 @@ var FrozoneBuildDetails = React.createClass({
     getInitialState: function() {
         return {
             dataState: "loading",
+            filesChanged: [],
             build: null
         };
     },
@@ -172,9 +173,24 @@ var FrozoneBuildDetails = React.createClass({
         });
     },
 
+    getChangedFiles: function() {
+        $.ajax({
+            url: "/api/build/" + this.props.buildId + "/file-changes",
+            dataType: 'json',
+            success: function(data) {
+                this.setState({ filesChanged: data });
+            }.bind(this),
+            error: function(xhr, status, err) {
+                console.error("get-file-changes-" + this.props.buildId, status, err.toString());
+                this.setState({ filesChanged: [] });
+            }.bind(this)
+        });
+    },
+
     componentDidMount: function() {
         this.props.timer = setInterval(this.fetchData, 10000);
         this.fetchData();
+        this.getChangedFiles();
     },
 
     componentWillUnmount: function() {
@@ -197,9 +213,24 @@ var FrozoneBuildDetails = React.createClass({
                 </div>);
             }
 
+            var filesChanged = this.state.filesChanged.map(function (change) {
+                var label = <span className="label label-info">M</span>;
+                if (!change.value.oldContents) {
+                    label = <span className="label label-success">A</span>;
+                }
+                if (!change.value.newContents) {
+                    label = <span className="label label-danger">R</span>;
+                }
+
+                return (<li key={change.key}>
+                    {label} {change.value.filename}
+                </li>);
+            });
+
             return (<div>
             <h2><FrozoneBuildBadge build={b} /> Build #{this.props.buildId}</h2>
             {cancelBox}
+
             <FrozonePatchPreview build={b} />
                 <table className="table">
                     <tr>
@@ -251,6 +282,9 @@ var FrozoneBuildDetails = React.createClass({
                         <td>{b.dockerImage ? b.dockerImage : "-"}</td>
                     </tr>
                 </table>
+
+                <h3>Files</h3>
+                <ul className="list-unstyled">{filesChanged}</ul>
 
                 <h3>Log</h3>
                 <pre>{b.buildMessage}</pre>

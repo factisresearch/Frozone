@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE EmptyDataDecls #-}
 module Frozone.Model where
 
 import Database.Persist.TH
@@ -32,4 +33,9 @@ TempRepository json
      dockerImage T.Text Maybe
      UniqueRepoPath path
      UniqueChangesHash changesHash
+BundleChange json
+     filename FilePath
+     oldContents T.Text Maybe
+     newContents T.Text Maybe
+     repoId TempRepositoryId
 |]
