@@ -40,12 +40,9 @@ data FrozoneRepoCreated
 
 data RepoConfig
    = RepoConfig
-   { rc_ghc :: T.Text -- ghc version
-   , rc_cabal :: T.Text -- cabal version
-   , rc_aptPkg :: [T.Text] -- needed apt-get packages
-   , rc_cabalRepo :: Maybe T.Text -- custom cabal repository
-   , rc_shellCmds :: [T.Text] -- other shell commands
-   , rc_cabalFile :: FilePath -- location of cabal file in repo
+   { rc_cookDir :: FilePath
+   , rc_entryPoint :: String
+   , rc_boringFile :: Maybe FilePath
    } deriving (Show, Eq)
 
 $(deriveJSON (jDrop 3) ''FrozoneConfig)

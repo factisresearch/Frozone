@@ -6,7 +6,6 @@ module Frozone.BundleChecker where
 
 import Frozone.Types
 import Frozone.Model
-import Frozone.BaseImage
 import Frozone.Util.Logging
 import Frozone.Util.Random
 import Frozone.Util.Process
@@ -18,13 +17,13 @@ import Control.Exception
 import Control.Monad.Logger
 import Control.Monad.Trans
 import Control.Monad.Trans.Resource
+import Cook.Build
+import Cook.Types
 import Data.List
 import Data.Maybe
 import Data.Time
 import Database.Persist.Sqlite hiding (get)
 import Network.Email.Sendmail
-import System.Directory
-import System.Exit
 import System.FilePath
 import Web.Spock
 import qualified Crypto.Hash.SHA1 as SHA1
@@ -114,47 +113,25 @@ launchBuild st ioSQL repoId repo =
                Left parseException ->
                    buildFailed ("Error in .frozone.yml: " ++ show parseException)
                Right repoCfg ->
-                   do cabalOk <- doesFileExist (tempRepositoryPath repo </> rc_cabalFile repoCfg)
-                      if cabalOk
-                      then do cabalBS <- BS.readFile (tempRepositoryPath repo </> rc_cabalFile repoCfg)
-                              mBaseImage <- ensureBaseImageExists (fs_baseImageBuildsVar st) repoCfg cabalBS
-                              case mBaseImage of
-                                Left errMsg ->
-                                    buildFailed ("Something went wrong while trying to build the base image:\n" ++ errMsg)
-                                Right baseImage ->
-                                    prepareDockerFile baseImage
-                      else buildFailed ("Your cabal file " ++ rc_cabalFile repoCfg ++ "doesn't exist")
-
-      prepareDockerFile baseImage =
-          do let dockerPath = (tempRepositoryPath repo </> "Dockerfile")
-                 baseImgTag = "$$BASE_IMAGE$$"
-             dockerOk <- doesFileExist dockerPath
-             if dockerOk
-             then do dockerfile <- T.readFile dockerPath
-                     if T.isInfixOf baseImgTag dockerfile
-                     then do T.writeFile dockerPath (T.replace baseImgTag baseImage dockerfile)
-                             ioSQL $ DB.update repoId [TempRepositoryDockerBaseImage =. (Just baseImage)]
-                             runDockerBuild
-                     else buildFailed ("Missing 'FROM " ++ (T.unpack baseImgTag) ++ "' in your Dockerfile!")
-             else buildFailed "Missing a Dockerfile in your Repository root."
-
-      runDockerBuild =
-          do doLog LogNote ("Starting to build " ++ show repoId)
-             now <- getCurrentTime
-             ioSQL $ DB.update repoId [TempRepositoryBuildStartedOn =. (Just now)]
-             let imageName = "frozone/build-" ++ (T.unpack $ tempRepositoryChangesHash repo)
-             (ec, stdout, stderr) <-
-                 runProc "docker" ["build", "-rm", "-t", imageName, tempRepositoryPath repo]
-             case ec of
-               ExitFailure _ ->
-                   buildFailed (stdout ++ "\n \n" ++ stderr)
-               ExitSuccess ->
-                   do doLog LogNote ("Dockerbuild of " ++ show repoId ++ " complete! Image: " ++ imageName)
-                      now' <- getCurrentTime
-                      ioSQL $ DB.update repoId [ TempRepositoryBuildSuccessOn =. (Just now')
-                                               , TempRepositoryBuildMessage =. (T.pack $ "Build successed!\n\n" ++ stdout)
-                                               , TempRepositoryDockerImage =. (Just (T.pack imageName))
-                                               ]
+                   do let cookConfig =
+                              CookConfig
+                              { cc_stateDir = (fc_storageDir . fs_config) st
+                              , cc_dataDir = (tempRepositoryPath repo)
+                              , cc_buildFileDir = (tempRepositoryPath repo) </> rc_cookDir repoCfg
+                              , cc_boringFile = fmap (\b -> (tempRepositoryPath repo) </> b) $ rc_boringFile repoCfg
+                              , cc_buildEntryPoints = [ rc_entryPoint repoCfg ]
+                              }
+                      res <- cookBuild cookConfig
+                      case res of
+                        ((DockerImage imageName) : _) ->
+                            do doLog LogNote ("Dockerbuild of " ++ show repoId ++ " complete! Image: " ++ T.unpack imageName)
+                               now' <- getCurrentTime
+                               ioSQL $ DB.update repoId [ TempRepositoryBuildSuccessOn =. (Just now')
+                                                        , TempRepositoryBuildMessage =. (T.pack $ "Build okay!")
+                                                        , TempRepositoryDockerImage =. (Just imageName)
+                                                        ]
+                        _ ->
+                            buildFailed "Cook build failed!"
 
 data FileChangeAction
    = FileChangeCreated
