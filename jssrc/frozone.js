@@ -40,36 +40,12 @@ var FrozoneBuildRow = React.createClass({
         }
     },
 
-    cancel: function(e) {
-        e.preventDefault();
-        var build = this.props.build;
-
-        $.ajax({
-            url: "/api/build/" + build.key + "/cancel",
-            dataType: 'json',
-            success: function(data) {
-                this.setState({canceled: true });
-            }.bind(this),
-            error: function(xhr, status, err) {
-                console.error("build-" + build.key + "-cancel", status, err.toString());
-            }.bind(this)
-        });
-    },
-
     render: function() {
         var build = this.props.build;
 
         var shortDisplay = build.value.patchBundle.split("New patches:");
 
         var badge = <FrozoneBuildBadge build={build.value} />;
-        var cancelAction = <span />;
-        if (this.state.canceled || build.value.patchCanceledOn) {
-            badge = <span className="label label-danger">canceled</span>;
-        } else {
-            cancelAction = (<a href="#" onClick={this.cancel} title="Cancel build / mark as bad patch">
-                <i className="fa fa-bomb"></i>
-            </a>);
-        }
 
         return (<tr>
             <th>{build.key}</th>
@@ -79,8 +55,7 @@ var FrozoneBuildRow = React.createClass({
             <td>
                 <a href={"#/build/" + build.key} title="More Information">
                     <i className="fa fa-info-circle"></i>
-                </a>&nbsp;
-                {cancelAction}
+                </a>
             </td>
             </tr>);
     }
@@ -187,6 +162,22 @@ var FrozoneBuildDetails = React.createClass({
         });
     },
 
+    cancel: function(e) {
+        e.preventDefault();
+        var b = this.state.build;
+
+        $.ajax({
+            url: "/api/build/" + this.props.buildId + "/cancel",
+            dataType: 'json',
+            success: function(data) {
+                this.fetchData();
+            }.bind(this),
+            error: function(xhr, status, err) {
+                console.error("build-" + this.props.buildId + "-cancel", status, err.toString());
+            }.bind(this)
+        });
+    },
+
     componentDidMount: function() {
         this.props.timer = setInterval(this.fetchData, 10000);
         this.fetchData();
@@ -206,12 +197,16 @@ var FrozoneBuildDetails = React.createClass({
             var b = this.state.build;
 
             var cancelBox = <span></span>;
+            var canCancel = true;
             if(b.patchCanceledOn) {
+                canCancel = false;
                 cancelBox = (<div className="alert alert-danger" role="alert">
                     <strong>Patch was canceled: </strong>
                     <span>{b.patchCancelReason ? b.patchCancelReason : "Reason unknown"}</span>
                 </div>);
             }
+
+            var canReview = !!(b.buildSuccessOn);
 
             var filesChanged = this.state.filesChanged.map(function (change) {
                 var label = <span className="label label-info">M</span>;
@@ -228,7 +223,16 @@ var FrozoneBuildDetails = React.createClass({
             });
 
             return (<div>
-            <h2><FrozoneBuildBadge build={b} /> Build #{this.props.buildId}</h2>
+            <div className="buildHeader clearFix">
+                <h2 className="pull-left"><FrozoneBuildBadge build={b} /> Build #{this.props.buildId}</h2>
+
+                <div className="buildButtons pull-right">
+                    <button type="button" className="btn btn-danger" disabled={!canCancel} onClick={this.cancel}>Cancel patch</button>
+                    <a className="btn btn-info" disabled={!canReview} href={"#/build/" + this.props.buildId +"/review"}>Review patch</a>
+                    <button type="button" className="btn btn-success" disabled={true}>Apply patch</button>
+                </div>
+            </div>
+
             {cancelBox}
 
             <FrozonePatchPreview build={b} />
@@ -296,6 +300,51 @@ var FrozoneBuildDetails = React.createClass({
     }
 });
 
+var FrozoneReview = React.createClass({
+    getInitialState: function() {
+        return {
+            filesChanged: [],
+            loaded: false
+        }
+    },
+
+    getChangedFiles: function() {
+        $.ajax({
+            url: "/api/build/" + this.props.buildId + "/file-changes",
+            dataType: 'json',
+            success: function(data) {
+                this.setState({ filesChanged: data, loaded: true });
+            }.bind(this),
+            error: function(xhr, status, err) {
+                console.error("get-file-changes-" + this.props.buildId, status, err.toString());
+                this.setState({ filesChanged: [] });
+            }.bind(this)
+        });
+    },
+
+    componentDidMount: function() {
+        this.getChangedFiles();
+    },
+
+    render: function() {
+        if (!this.state.loaded) {
+            return (<FrozoneLoading />);
+        }
+
+        return (<div>
+        <div className="buildHeader clearFix">
+            <h2 className="pull-left">Review #{this.props.buildId}</h2>
+
+            <div className="buildButtons pull-right">
+                <button type="button" className="btn btn-danger" disabled={!canCancel} onClick={this.cancel}>Cancel patch</button>
+                <a className="btn btn-info" disabled={!canReview} href={"#/build/" + this.props.buildId +"/review"}>Review patch</a>
+                <button type="button" className="btn btn-success" disabled={true}>Apply patch</button>
+            </div>
+        </div>
+        </div>);
+    }
+});
+
 $(function() {
     /*
     * ROUTING
@@ -308,6 +357,9 @@ $(function() {
     });
     crossroads.addRoute('build/{build}', function (buildId) {
         renderComp(<FrozoneBuildDetails buildId={buildId} />);
+    });
+    crossroads.addRoute('build/{build}/review', function (buildId) {
+        renderComp(<FrozoneReview buildId={buildId} />);
     });
 
     //setup hasher

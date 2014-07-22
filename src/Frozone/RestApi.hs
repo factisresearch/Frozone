@@ -19,7 +19,7 @@ restApi =
             json allBuilds
 
        get "/api/build/:buildId/cancel" $
-         do (buildId :: TempRepositoryId) <- paramPathPiece "buildId"
+         do Just (buildId :: TempRepositoryId) <- param "buildId"
             now <- liftIO getCurrentTime
             runSQL $ DB.update buildId [ TempRepositoryPatchCanceledOn =. (Just now)
                                        , TempRepositoryPatchCancelReason =. (Just "Canceled by user")
@@ -28,7 +28,7 @@ restApi =
             json (FrozoneMessage "Canceled!")
 
        get "/api/build/:buildId" $
-         do (buildId :: TempRepositoryId) <- paramPathPiece "buildId"
+         do Just (buildId :: TempRepositoryId) <- param "buildId"
             mBuild <- runSQL $ DB.get buildId
             case mBuild of
               Nothing ->
@@ -37,6 +37,6 @@ restApi =
                   json build
 
        get "/api/build/:buildId/file-changes" $
-         do (buildId :: TempRepositoryId) <- paramPathPiece "buildId"
+         do Just (buildId :: TempRepositoryId) <- param "buildId"
             allChanges <- runSQL $ DB.selectList [BundleChangeRepoId ==. buildId] []
             json allChanges

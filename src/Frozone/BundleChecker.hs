@@ -31,14 +31,12 @@ import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Lazy as BSL
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import qualified Data.Yaml as YML
 import qualified Database.Persist as DB
-import qualified Network.Wai.Parse as Wai
 
 closeDangelingActions :: (MonadIO m, PersistQuery m, MonadSqlPersist m) => m ()
 closeDangelingActions =
@@ -53,12 +51,13 @@ closeDangelingActions =
 
 bundleCheckAction :: FrozoneAction ()
 bundleCheckAction =
-    do repo <- param "target-repo"
-       email <- param "email"
+    do Just repo <- param "target-repo"
+       Just email <- param "email"
        allFiles <- files
-       case lookup "patch-bundle" allFiles of
+       case HM.lookup "patch-bundle" allFiles of
          Just patchBundle ->
-             mkTempRepo repo email (BSL.toStrict $ Wai.fileContent patchBundle)
+             do bs <- liftIO $ BS.readFile (uf_tempLocation patchBundle)
+                mkTempRepo repo email bs
          Nothing ->
              json (FrozoneError "No patch-bundle sent!")
 

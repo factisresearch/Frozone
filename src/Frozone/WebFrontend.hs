@@ -1,12 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 module Frozone.WebFrontend where
-
-import Frozone.Types
-import Frozone.Util.Spock
 
 import Data.Monoid
 import Text.Blaze.Html5
-import Text.Blaze.Html5.Attributes
+import Web.Spock (blaze)
 import qualified Text.Blaze.Html5 as H
 import qualified Text.Blaze.Html5.Attributes as A
 
@@ -23,6 +21,8 @@ basicPage pageContent =
              H.link ! A.href "/css/bootstrap.min.css" ! A.rel "stylesheet"
              H.link ! A.href "/css/bootstrap-theme.min.css" ! A.rel "stylesheet"
              H.link ! A.href "/css/font-awesome.min.css" ! A.rel "stylesheet"
+             H.link ! A.href "/css/codemirror.css" ! A.rel "stylesheet"
+             H.link ! A.href "/css/mergely.css" ! A.rel "stylesheet"
       pageBody =
           do H.div ! A.class_ "container" $
               do H.div ! A.class_ "header" $ H.a ! A.href "/#/home" $ H.h3 ! A.class_ "text-muted" $ "Frozone"
@@ -35,6 +35,8 @@ basicPage pageContent =
              H.script ! A.src "/js/lib/signals.min.js" $ mempty
              H.script ! A.src "/js/lib/hasher.min.js" $ mempty
              H.script ! A.src "/js/lib/crossroads.min.js" $ mempty
+             H.script ! A.src "/js/lib/codemirror.min.js" $ mempty
+             H.script ! A.src "/js/lib/mergely.min.js" $ mempty
              H.script ! A.src "/js/out/frozone.js" $ mempty
 
 indexPage =

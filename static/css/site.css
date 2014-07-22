@@ -35,7 +35,7 @@ body {
 .container {
     margin-left: auto;
     margin-right: auto;
-    width: 90%;
+    width: 95%;
 }
 
 .container-narrow > hr {
@@ -77,4 +77,16 @@ body {
   .jumbotron {
     border-bottom: 0;
   }
+}
+
+.buildHeader {
+    margin-bottom: 10px;
+}
+
+.buildHeader h2 {
+    margin-top: 0px;
+}
+
+.buildHeader button, .buildHeader a {
+    margin-left: 5px;
 }
