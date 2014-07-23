@@ -6,9 +6,9 @@ module Frozone.BundleChecker where
 
 import Frozone.Types
 import Frozone.Model
+import Frozone.VCS
 import Frozone.Util.Logging
 import Frozone.Util.Random
-import Frozone.Util.Process
 import Frozone.Util.Db
 
 import Control.Applicative
@@ -121,53 +121,19 @@ launchBuild st ioSQL repoId repo =
                               , cc_boringFile = fmap (\b -> (tempRepositoryPath repo) </> b) $ rc_boringFile repoCfg
                               , cc_buildEntryPoints = [ rc_entryPoint repoCfg ]
                               }
+                      now' <- getCurrentTime
+                      ioSQL $ DB.update repoId [ TempRepositoryBuildStartedOn =. (Just now') ]
                       res <- cookBuild cookConfig
                       case res of
                         ((DockerImage imageName) : _) ->
                             do doLog LogNote ("Dockerbuild of " ++ show repoId ++ " complete! Image: " ++ T.unpack imageName)
-                               now' <- getCurrentTime
-                               ioSQL $ DB.update repoId [ TempRepositoryBuildSuccessOn =. (Just now')
+                               now'' <- getCurrentTime
+                               ioSQL $ DB.update repoId [ TempRepositoryBuildSuccessOn =. (Just now'')
                                                         , TempRepositoryBuildMessage =. (T.pack $ "Build okay!")
                                                         , TempRepositoryDockerImage =. (Just imageName)
                                                         ]
                         _ ->
                             buildFailed "Cook build failed!"
-
-data FileChangeAction
-   = FileChangeCreated
-   | FileChangeModified
-   | FileChangeDeleted
-   deriving (Show, Eq)
-
-type FileChangeMap = HM.HashMap FilePath FileChangeAction
-
-getFileChangeInfo :: BS.ByteString -> FileChangeMap
-getFileChangeInfo bundleBS =
-    foldl handleLine HM.empty (BSC.split '\n' bundleBS)
-    where
-      handleLine hm bs =
-          if BS.isPrefixOf "] " bs
-          then handleLine' hm (BS.drop 2 bs)
-          else handleLine' hm bs
-      handleLine' hm bs
-          | BS.isPrefixOf "hunk" bs =
-              case splitBS of
-                ["hunk", filename, _] ->
-                    HM.insertWith (\new old -> if old == FileChangeCreated then old else new) (BSC.unpack filename) FileChangeModified hm
-                _ -> hm
-          | BS.isPrefixOf "rmfile" bs =
-              case splitBS of
-                ["rmfile", filename] ->
-                    HM.insert (BSC.unpack filename) FileChangeDeleted hm
-                _ -> hm
-          | BS.isPrefixOf "addfile" bs =
-              case splitBS of
-                ["addfile", filename] ->
-                    HM.insert (BSC.unpack filename) FileChangeCreated hm
-                _ -> hm
-          | otherwise = hm
-          where
-            splitBS = BSC.split ' ' bs
 
 loadChangeInfo :: FileChangeMap
                -> FilePath
@@ -208,72 +174,75 @@ mkTempRepo repo email patchBundle =
     do st <- getState
        targetIdent <- liftIO $ randomB16Ident 10
        let targetDir = (fc_storageDir $ fs_config st) </> targetIdent
-           withDarcs = withProgResult "darcs" (json . FrozoneError . T.pack)
-       withDarcs ["get", "--lazy", repo, targetDir] $ \_ ->
-           do now <- liftIO getCurrentTime
-              let bundleLoc = targetDir </> "patches.dpatch"
-                  changeMap = getFileChangeInfo patchBundle
-              preApply <- liftIO $ loadChangeInfo changeMap targetDir preApplyContent
-              liftIO $ BS.writeFile bundleLoc patchBundle
-              withDarcs ["apply", "--repodir", targetDir, bundleLoc] $ \_ ->
-                  liftIO $ doLog LogInfo ("Patches applied!")
-              withDarcs ["changes", "--repodir", targetDir] $ \changes ->
-                  do let changesHash =
-                             T.decodeUtf8 $ B16.encode $ SHA1.hash $ BSC.pack changes
-                         rp =
-                             TempRepository
-                             { tempRepositoryBranch = T.pack repo
-                             , tempRepositoryPath = targetDir
-                             , tempRepositoryCreatedOn = now
-                             , tempRepositoryNotifyEmail = [email]
-                             , tempRepositoryChangesHash = changesHash
-                             , tempRepositoryPatchBundle = T.decodeUtf8 patchBundle
-                             , tempRepositoryBuildEnqueuedOn = Nothing
-                             , tempRepositoryBuildStartedOn = Nothing
-                             , tempRepositoryBuildFailedOn = Nothing
-                             , tempRepositoryBuildSuccessOn = Nothing
-                             , tempRepositoryBuildMessage = ""
-                             , tempRepositoryPatchCanceledOn = Nothing
-                             , tempRepositoryPatchCancelReason = Nothing
-                             , tempRepositoryDockerBaseImage = Nothing
-                             , tempRepositoryDockerImage = Nothing
-                             }
+           withVCS action ok =
+               do resp <- liftIO action
+                  if vcs_success resp
+                  then ok resp
+                  else (json . FrozoneError . T.pack) (BSC.unpack $ vcs_stdErr resp)
+       withVCS ((vcs_cloneRepository $ fs_vcs st) (VCSSource repo) (VCSRepository targetDir)) $ \_ ->
+           withVCS ((vcs_changedFiles $ fs_vcs st) (VCSPatch patchBundle)) $ \r1 ->
+               do let Just changeMap = vcs_data r1
+                  preApply <- liftIO $ loadChangeInfo changeMap targetDir preApplyContent
+                  withVCS ((vcs_applyPatch $ fs_vcs st) (VCSPatch patchBundle) (VCSRepository targetDir)) $ \_ ->
+                      do liftIO $ doLog LogInfo ("Patches applied!")
+                         withVCS ((vcs_changeLog $ fs_vcs st) (VCSRepository targetDir)) $ \r2 ->
+                             enqueuePatch (vcs_stdOut r2) targetDir st changeMap preApply
+    where
+      enqueuePatch changes targetDir st changeMap preApply =
+          do now <- liftIO getCurrentTime
+             let changesHash =
+                     T.decodeUtf8 $ B16.encode $ SHA1.hash changes
+                 rp =
+                     TempRepository
+                     { tempRepositoryBranch = T.pack repo
+                     , tempRepositoryPath = targetDir
+                     , tempRepositoryCreatedOn = now
+                     , tempRepositoryNotifyEmail = [email]
+                     , tempRepositoryChangesHash = changesHash
+                     , tempRepositoryPatchBundle = T.decodeUtf8 patchBundle
+                     , tempRepositoryBuildEnqueuedOn = Nothing
+                     , tempRepositoryBuildStartedOn = Nothing
+                     , tempRepositoryBuildFailedOn = Nothing
+                     , tempRepositoryBuildSuccessOn = Nothing
+                     , tempRepositoryBuildMessage = ""
+                     , tempRepositoryPatchCanceledOn = Nothing
+                     , tempRepositoryPatchCancelReason = Nothing
+                     , tempRepositoryDockerImage = Nothing
+                     }
 
-                     mRepo <- runSQL $ DB.getBy (UniqueChangesHash changesHash)
-                     let scheduleBuild dbId =
-                          do liftIO $ doLog LogNote ("Will schedule build for " ++ show changesHash ++ " (" ++ targetDir ++ ")")
-                             spockHeart <- getSpockHeart
-                             _ <- liftIO $ forkIO (launchBuild st (runSpockIO spockHeart . runSQL) dbId rp)
-                             return ()
-                     case mRepo of
-                       Just sameRepoEntity ->
-                           let sameRepo = entityVal sameRepoEntity
-                               sameRepoId = entityKey sameRepoEntity
-                           in if (isJust $ tempRepositoryPatchCanceledOn sameRepo)
-                              then do runSQL $ DB.update sameRepoId [ TempRepositoryNotifyEmail =. nub (email : tempRepositoryNotifyEmail sameRepo)
-                                                                    , TempRepositoryBuildEnqueuedOn =. Nothing
-                                                                    , TempRepositoryBuildStartedOn =. Nothing
-                                                                    , TempRepositoryBuildFailedOn =. Nothing
-                                                                    , TempRepositoryBuildSuccessOn =. Nothing
-                                                                    , TempRepositoryBuildMessage =. ""
-                                                                    , TempRepositoryPatchCanceledOn =. Nothing
-                                                                    , TempRepositoryPatchCancelReason =. Nothing
-                                                                    , TempRepositoryDockerBaseImage =. Nothing
-                                                                    , TempRepositoryDockerImage =. Nothing
-                                                                    ]
-                                      scheduleBuild sameRepoId
-                              else if (isJust (tempRepositoryBuildSuccessOn sameRepo) || isJust (tempRepositoryBuildFailedOn sameRepo))
-                                   then liftIO $
-                                        do doLog LogNote ("Build of " ++ show changesHash ++ " already completed. Sending results via email")
-                                           sendNotifications (Just email) sameRepo
-                                   else do liftIO $ doLog LogNote ("Build of " ++ show changesHash ++ " in progress. Adding sender to notification list")
-                                           runSQL $ DB.update sameRepoId [ TempRepositoryNotifyEmail =. nub (email : tempRepositoryNotifyEmail sameRepo) ]
-                       Nothing ->
-                           do postApply <- liftIO $ loadChangeInfo changeMap targetDir postApplyContent
-                              dbId <-
-                                  do repoId <- runSQL $ DB.insert rp
-                                     _ <- runSQL $ DB.insertMany (generateBundleChanges repoId preApply postApply)
-                                     return repoId
-                              scheduleBuild dbId
-
-                     json (FrozoneMessage "Patchbundle recieved and enqueued for building")
+             mRepo <- runSQL $ DB.getBy (UniqueChangesHash changesHash)
+             let scheduleBuild dbId =
+                     do liftIO $ doLog LogNote ("Will schedule build for " ++ show changesHash ++ " (" ++ targetDir ++ ")")
+                        spockHeart <- getSpockHeart
+                        _ <- liftIO $ forkIO (launchBuild st (runSpockIO spockHeart . runSQL) dbId rp)
+                        return ()
+             case mRepo of
+               Just sameRepoEntity ->
+                   let sameRepo = entityVal sameRepoEntity
+                       sameRepoId = entityKey sameRepoEntity
+                   in if (isJust $ tempRepositoryPatchCanceledOn sameRepo)
+                      then do runSQL $ DB.update sameRepoId [ TempRepositoryNotifyEmail =. nub (email : tempRepositoryNotifyEmail sameRepo)
+                                                            , TempRepositoryBuildEnqueuedOn =. Nothing
+                                                            , TempRepositoryBuildStartedOn =. Nothing
+                                                            , TempRepositoryBuildFailedOn =. Nothing
+                                                            , TempRepositoryBuildSuccessOn =. Nothing
+                                                            , TempRepositoryBuildMessage =. ""
+                                                            , TempRepositoryPatchCanceledOn =. Nothing
+                                                            , TempRepositoryPatchCancelReason =. Nothing
+                                                            , TempRepositoryDockerImage =. Nothing
+                                                            ]
+                              scheduleBuild sameRepoId
+                      else if (isJust (tempRepositoryBuildSuccessOn sameRepo) || isJust (tempRepositoryBuildFailedOn sameRepo))
+                           then liftIO $
+                                 do doLog LogNote ("Build of " ++ show changesHash ++ " already completed. Sending results via email")
+                                    sendNotifications (Just email) sameRepo
+                           else do liftIO $ doLog LogNote ("Build of " ++ show changesHash ++ " in progress. Adding sender to notification list")
+                                   runSQL $ DB.update sameRepoId [ TempRepositoryNotifyEmail =. nub (email : tempRepositoryNotifyEmail sameRepo) ]
+               Nothing ->
+                   do postApply <- liftIO $ loadChangeInfo changeMap targetDir postApplyContent
+                      dbId <-
+                          do repoId <- runSQL $ DB.insert rp
+                             _ <- runSQL $ DB.insertMany (generateBundleChanges repoId preApply postApply)
+                             return repoId
+                      scheduleBuild dbId
+             json (FrozoneMessage "Patchbundle recieved and enqueued for building")

@@ -14,11 +14,11 @@ import qualified Database.Persist as DB
 
 restApi :: FrozoneApp
 restApi =
-    do get "/api/list-builds" $
+    do get "/list-builds" $
          do allBuilds <- runSQL $ DB.selectList [] [DB.Desc TempRepositoryId, DB.LimitTo 50]
             json allBuilds
 
-       get "/api/build/:buildId/cancel" $
+       get "/build/:buildId/cancel" $
          do Just (buildId :: TempRepositoryId) <- param "buildId"
             now <- liftIO getCurrentTime
             runSQL $ DB.update buildId [ TempRepositoryPatchCanceledOn =. (Just now)
@@ -27,7 +27,7 @@ restApi =
             -- todo: kill docker build if running
             json (FrozoneMessage "Canceled!")
 
-       get "/api/build/:buildId" $
+       get "/build/:buildId" $
          do Just (buildId :: TempRepositoryId) <- param "buildId"
             mBuild <- runSQL $ DB.get buildId
             case mBuild of
@@ -36,7 +36,7 @@ restApi =
               Just build ->
                   json build
 
-       get "/api/build/:buildId/file-changes" $
+       get "/build/:buildId/file-changes" $
          do Just (buildId :: TempRepositoryId) <- param "buildId"
             allChanges <- runSQL $ DB.selectList [BundleChangeRepoId ==. buildId] []
             json allChanges

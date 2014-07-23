@@ -1,12 +1,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Frozone.Types where
 
+import Frozone.VCS
 import Frozone.Util.Json
 
-import Control.Concurrent.STM
 import Database.Persist.Sql
 import Web.Spock
-import qualified Data.HashSet as HS
 import qualified Data.Text as T
 
 type FrozoneApp = SpockM Connection () FrozoneState ()
@@ -18,12 +17,13 @@ data FrozoneConfig
    { fc_sqliteFile :: FilePath
    , fc_storageDir :: FilePath
    , fc_httpPort :: Int
+   , fc_vcs :: String
    }
 
 data FrozoneState
    = FrozoneState
    { fs_config :: FrozoneConfig
-   , fs_baseImageBuildsVar :: TVar (HS.HashSet T.Text)
+   , fs_vcs :: VCSApi
    }
 
 data FrozoneMessage

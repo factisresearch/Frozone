@@ -29,7 +29,6 @@ TempRepository json
      buildMessage T.Text
      patchCanceledOn UTCTime Maybe
      patchCancelReason T.Text Maybe
-     dockerBaseImage T.Text Maybe
      dockerImage T.Text Maybe
      UniqueRepoPath path
      UniqueChangesHash changesHash

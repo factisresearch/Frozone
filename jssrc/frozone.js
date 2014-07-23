@@ -7,16 +7,15 @@ var FrozoneBuildBadge = React.createClass({
         var buildStatus = <span className="label label-default">unknown</span>;
         if (b.patchCanceledOn) {
             buildStatus = <span className="label label-danger">canceled</span>;
+        } else if (b.buildFailedOn) {
+            buildStatus = <span className="label label-danger">failed</span>;
         } else {
             if (b.buildEnqueuedOn) {
                 buildStatus = <span className="label label-warning">enqueued</span>;
             }
             if (b.buildStartedOn) {
                 buildStatus = <span className="label label-info">started</span>;
-
-                if (b.buildFailedOn) {
-                    buildStatus = <span className="label label-danger">failed</span>;
-                } else if (b.buildSuccessOn) {
+                if (b.buildSuccessOn) {
                     buildStatus = <span className="label label-success">succeded</span>;
                 }
             }
@@ -277,10 +276,6 @@ var FrozoneBuildDetails = React.createClass({
 
                 <h3>Docker</h3>
                 <table className="table">
-                    <tr>
-                        <th>Base-Image</th>
-                        <td>{b.dockerBaseImage ? b.dockerBaseImage : "-"}</td>
-                    </tr>
                     <tr>
                         <th>Image</th>
                         <td>{b.dockerImage ? b.dockerImage : "-"}</td>

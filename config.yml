@@ -1,3 +1,4 @@
 sqliteFile: scratch/test.db
 storageDir: scratch/storage
 httpPort: 8080
+vcs: darcs

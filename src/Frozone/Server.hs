@@ -9,14 +9,13 @@ import Frozone.Model
 import Frozone.BundleChecker
 import Frozone.RestApi
 import Frozone.WebFrontend
+import Frozone.VCS
 
-import Control.Concurrent.STM
 import Control.Monad.Logger
 import Database.Persist.Sqlite (createSqlitePool, runSqlPool, runMigration)
 import Network.Wai.Middleware.Static
 import Web.Spock
 import Control.Monad.Trans.Resource
-import qualified Data.HashSet as HS
 import qualified Data.Text as T
 
 runServer :: FrozoneConfig -> IO ()
@@ -25,11 +24,13 @@ runServer fc =
        runResourceT $ runNoLoggingT $ (flip runSqlPool) pool $
           do runMigration migrateCore
              closeDangelingActions
-       baseImageBuildsVar <- newTVarIO HS.empty
        let fcState =
                FrozoneState
                { fs_config = fc
-               , fs_baseImageBuildsVar = baseImageBuildsVar
+               , fs_vcs =
+                   case fc_vcs fc of
+                     "darcs" -> darcsVCS
+                     _ -> error "Unkown VCS System! Currently supported: darcs"
                }
        spock (fc_httpPort fc) sessCfg (PCConduitPool pool) fcState serverApp
     where
@@ -42,4 +43,4 @@ serverApp =
     do middleware (staticPolicy (addBase "static"))
        get "/" indexPage
        post "/check-bundle" bundleCheckAction
-       restApi
+       subcomponent "/api" $ restApi
