@@ -6,7 +6,7 @@ import Frozone.Types
 import Frozone.Model
 import Frozone.Util.Db
 
-import Web.Spock
+import Web.Spock hiding (patch)
 import Database.Persist ((==.))
 import qualified Database.Persist as DB
 
@@ -21,6 +21,14 @@ restApi =
             runSQL $ updateBuildState buildId BuildCanceled  "Aborted by user"
             -- todo: kill docker build if running
             json (FrozoneMessage "Canceled!")
+       get "/patch/:patchId" $
+         do Just (patchId :: PatchId) <- param "patchId"
+            mPatch <- runSQL $ DB.get patchId
+            case mPatch of
+              Nothing ->
+                  json (FrozoneError "Patch not found!")
+              Just patch ->
+                  json patch
 
        get "/build/:buildId" $
          do Just (buildId :: BuildRepositoryId) <- param "buildId"

@@ -3,25 +3,19 @@
 var FrozoneBuildBadge = React.createClass({
     render: function() {
         var b = this.props.build;
-
-        var buildStatus = <span className="label label-default">unknown</span>;
-        if (b.patchCanceledOn) {
-            buildStatus = <span className="label label-danger">canceled</span>;
-        } else if (b.buildFailedOn) {
-            buildStatus = <span className="label label-danger">failed</span>;
+        var className = "label ";
+        if (b.state == "failed" || b.state == "canceled" ) {
+            className += "label-danger";
+        } else if (b.state == "review-rejected" || b.state == "recheck") {
+            className += "label-warning";
+        } else if (b.state == "enqueued" || b.state == "preparing" || b.state == "started" || b.state == "in-review") {
+            className += "label-info";
+        } else if (b.state == "success" || b.state == "review-okay" || b.state == "applied") {
+            className += "label-success";
         } else {
-            if (b.buildEnqueuedOn) {
-                buildStatus = <span className="label label-warning">enqueued</span>;
-            }
-            if (b.buildStartedOn) {
-                buildStatus = <span className="label label-info">started</span>;
-                if (b.buildSuccessOn) {
-                    buildStatus = <span className="label label-success">succeded</span>;
-                }
-            }
+            className += "label-default";
         }
-
-        return buildStatus;
+        return (<span className={className}>{b.state}</span>);
     }
 });
 
@@ -35,21 +29,37 @@ var FrozonePatchPreview = React.createClass({
 var FrozoneBuildRow = React.createClass({
     getInitialState: function() {
         return {
-            canceled: false
+            canceled: false,
+            patch: null
         }
+    },
+
+    componentDidMount: function() {
+        this.fetchData();
+    },
+
+    fetchData: function() {
+        $.ajax({
+            url: "/api/patch/" + this.props.build.value.patch,
+            dataType: 'json',
+            success: function(data) {
+                this.setState({ builds: data, patch: data });
+            }.bind(this),
+            error: function(xhr, status, err) {
+                console.error("patch", status, err.toString());
+            }.bind(this)
+        });
     },
 
     render: function() {
         var build = this.props.build;
-
-        var shortDisplay = build.value.patchBundle.split("New patches:");
 
         var badge = <FrozoneBuildBadge build={build.value} />;
 
         return (<tr>
             <th>{build.key}</th>
             <td>{build.value.createdOn}</td>
-            <td><FrozonePatchPreview build={build.value} /></td>
+            <td>{this.state.patch ? this.state.patch.name : "Loading..."}</td>
             <td>{badge}</td>
             <td>
                 <a href={"#/build/" + build.key} title="More Information">
@@ -99,7 +109,7 @@ var FrozoneOverview = React.createClass({
             <tr>
                 <th>ID</th>
                 <th>Created on</th>
-                <th>Patches</th>
+                <th>Patch</th>
                 <th>Status</th>
                 <th>Actions</th>
             </tr>
