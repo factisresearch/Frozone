@@ -1,10 +1,12 @@
 module Frozone.VCS.Types where
 
+import Data.Time
 import System.Exit
 import System.Process
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.HashMap.Strict as HM
+import qualified Data.Text as T
 
 data FileChangeAction
    = FileChangeCreated
@@ -16,12 +18,28 @@ type FileChangeMap = HM.HashMap FilePath FileChangeAction
 
 newtype VCSSource
     = VCSSource { unVCSSource :: String }
+      deriving (Show, Read, Eq)
 
 newtype VCSRepository
-    = VCSRepository { unVCSRepository :: String }
+    = VCSRepository { unVCSRepository :: FilePath }
+      deriving (Show, Read, Eq)
 
-newtype VCSPatch
-    = VCSPatch { unVCSPatch :: BS.ByteString }
+newtype VCSPatchBundle
+    = VCSPatchBundle { unVCSPatch :: BS.ByteString }
+      deriving (Show, Read, Eq)
+
+newtype VCSPatchId
+    = VCSPatchId { unVCSPatchId :: BS.ByteString }
+      deriving (Show, Read, Eq)
+
+data VCSPatch
+   = VCSPatch
+   { vp_id :: VCSPatchId
+   , vp_name :: T.Text
+   , vp_author :: T.Text
+   , vp_date :: UTCTime
+   , vp_dependents :: [VCSPatchId]
+   } deriving (Show, Read, Eq)
 
 data VCSResponse a
    = VCSResponse
@@ -29,14 +47,15 @@ data VCSResponse a
    , vcs_stdErr :: BSC.ByteString
    , vcs_success :: Bool
    , vcs_data :: Maybe a
-   }
+   } deriving (Show, Read, Eq)
 
 data VCSApi
    = VCSApi
-   { vcs_cloneRepository :: VCSSource -> VCSRepository -> IO (VCSResponse ())
-   , vcs_applyPatch :: VCSPatch -> VCSRepository -> IO (VCSResponse ())
+   { vcs_patchesFromBundle :: VCSRepository -> VCSPatchBundle -> IO (VCSResponse [VCSPatch])
+   , vcs_changedFiles :: VCSPatchId -> VCSPatchBundle -> IO (VCSResponse FileChangeMap)
+   , vcs_cloneRepository :: VCSSource -> VCSRepository -> IO (VCSResponse ())
+   , vcs_applyPatch :: VCSPatchId -> VCSPatchBundle -> VCSRepository -> IO (VCSResponse ())
    , vcs_changeLog :: VCSRepository -> IO (VCSResponse ())
-   , vcs_changedFiles :: VCSPatch -> IO (VCSResponse FileChangeMap)
    }
 
 runVCS :: FilePath -> [String] -> String -> (BS.ByteString -> a) -> IO (VCSResponse a)

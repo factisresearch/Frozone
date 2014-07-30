@@ -22,8 +22,7 @@ runServer :: FrozoneConfig -> IO ()
 runServer fc =
     do pool <- createSqlitePool (T.pack $ fc_sqliteFile fc) 5
        runResourceT $ runNoLoggingT $ (flip runSqlPool) pool $
-          do runMigration migrateCore
-             closeDangelingActions
+          runMigration migrateCore
        let fcState =
                FrozoneState
                { fs_config = fc
@@ -42,5 +41,5 @@ serverApp :: FrozoneApp
 serverApp =
     do middleware (staticPolicy (addBase "static"))
        get "/" indexPage
-       post "/check-bundle" bundleCheckAction
+       subcomponent "/bundle" $ bundleApi
        subcomponent "/api" $ restApi

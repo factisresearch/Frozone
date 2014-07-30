@@ -2,6 +2,7 @@ module Frozone.Util.Logging where
 
 import Data.Time
 import Control.Monad
+import Control.Monad.Trans
 import System.Locale
 
 data LogLevel
@@ -12,8 +13,9 @@ data LogLevel
    | LogError
    deriving (Show, Eq, Ord, Enum)
 
-doLog :: LogLevel -> String -> IO ()
+doLog :: MonadIO m => LogLevel -> String -> m ()
 doLog ll s =
+    liftIO $
     do now <- getCurrentTime
        when (ll > LogTrace) $ putStrLn ("[" ++ tStr now ++ " " ++ llTStr ++ "] " ++ s)
     where

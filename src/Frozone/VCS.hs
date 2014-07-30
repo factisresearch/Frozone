@@ -1,7 +1,7 @@
 module Frozone.VCS
     ( FileChangeAction (..), FileChangeMap
     , VCSSource (..), VCSRepository (..), VCSPatch (..), VCSResponse (..)
-    , VCSApi (..)
+    , VCSApi (..), VCSPatchBundle(..), VCSPatchId (..)
     , darcsVCS
     )
 where
