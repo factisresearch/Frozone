@@ -4,3 +4,4 @@ ghc:
 before_install:
   - chmod +x ./build-helper.sh && ./build-helper.sh
   - cabal update
+  - cd darcs-2.8.5 && cabal install
