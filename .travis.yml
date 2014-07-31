@@ -3,3 +3,4 @@ ghc:
   - 7.6
 before_install:
   - chmod +x ./build-helper.sh && ./build-helper.sh
+  - cabal update
