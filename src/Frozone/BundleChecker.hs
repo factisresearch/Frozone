@@ -14,6 +14,8 @@ import Frozone.Util.Email
 import Frozone.Util.Db
 
 import Control.Applicative
+import Control.Concurrent.STM
+import Control.Exception
 import Control.Monad.Error.Class
 import Control.Monad.Trans
 import Cook.Build
@@ -142,7 +144,10 @@ buildPatchBundle buildRepoId =
                            Left parseException ->
                                throwError ("Error in .frozone.yml: " ++ show parseException)
                            Right repoCfg ->
-                               do let cookConfig =
+                               do heart <- getSpockHeart
+                                  buildOutputV <- liftIO $ newTVarIO BS.empty
+                                  buildLogId <- runSQL $ updateBuildState buildRepoId BuildStarted ""
+                                  let cookConfig =
                                           CookConfig
                                           { cc_stateDir = (fc_storageDir . fs_config) st
                                           , cc_dataDir = (buildRepositoryPath repo)
@@ -150,8 +155,16 @@ buildPatchBundle buildRepoId =
                                           , cc_boringFile = fmap (\b -> (buildRepositoryPath repo) </> b) $ rc_boringFile repoCfg
                                           , cc_buildEntryPoints = [ rc_entryPoint repoCfg ]
                                           }
-                                  runSQL $ updateBuildState buildRepoId BuildStarted ""
-                                  res <- liftIO $ cookBuild cookConfig
+                                      cookCb bs =
+                                          do newBS <-
+                                                 atomically $
+                                                   do modifyTVar' buildOutputV (\orig -> BS.concat [orig, bs])
+                                                      readTVar buildOutputV
+                                             let logToDb =
+                                                     runSpockIO heart $ runSQL $ DB.update buildLogId [ BuildLogMessage =. (T.decodeUtf8 newBS) ]
+                                             logToDb `catch` \(e :: SomeException) ->
+                                                 doLog LogError ("Failed to persist current log to database: " ++ (show e))
+                                  res <- liftIO $ cookBuild cookConfig (Just $ StreamHook cookCb)
                                   case res of
                                     ((DockerImage imageName) : _) ->
                                         do let msg = "Dockerbuild of " ++ show buildRepoId ++ " complete! Image: " ++ T.unpack imageName

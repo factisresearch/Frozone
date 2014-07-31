@@ -66,9 +66,8 @@ BundleChange json
 |]
 
 updateBuildState :: (PersistMonadBackend m ~ SqlBackend, MonadIO m, PersistQuery m, MonadSqlPersist m)
-                 => BuildRepositoryId -> BuildState -> T.Text -> m ()
+                 => BuildRepositoryId -> BuildState -> T.Text -> m BuildLogId
 updateBuildState buildRepoId newState msg =
     do now <- liftIO getCurrentTime
        update buildRepoId [ BuildRepositoryState =. newState ]
-       _ <- insert (BuildLog newState now msg buildRepoId)
-       return ()
+       insert (BuildLog newState now msg buildRepoId)

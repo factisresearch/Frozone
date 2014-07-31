@@ -226,7 +226,7 @@ var FrozoneBuildDetails = React.createClass({
                 return (<tr key={logMessage.key}>
                     <td>
                         <h5><FrozoneBuildBadge state={logMessage.value.state} /> {logMessage.value.time}</h5>
-                        <code>{logMessage.value.message}</code>
+                        <pre>{logMessage.value.message}</pre>
                     </td>
                 </tr>);
             });
