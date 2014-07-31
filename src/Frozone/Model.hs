@@ -70,5 +70,5 @@ updateBuildState :: (PersistMonadBackend m ~ SqlBackend, MonadIO m, PersistQuery
 updateBuildState buildRepoId newState msg =
     do now <- liftIO getCurrentTime
        update buildRepoId [ BuildRepositoryState =. newState ]
-       _ <- insert (BuildLog BuildFailed now msg buildRepoId)
+       _ <- insert (BuildLog newState now msg buildRepoId)
        return ()

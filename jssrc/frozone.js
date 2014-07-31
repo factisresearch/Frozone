@@ -1,30 +1,38 @@
 /** @jsx React.DOM */
 
+function ajaxHelper(url, onSuccess, onFail) {
+    $.ajax({
+        url: url,
+        dataType: 'json',
+        success: onSuccess,
+        error: function(xhr, status, err) {
+            console.error("Ajax failed: " + url, status, err.toString());
+            if (onFail) {
+                onFail();
+            }
+        }
+    });
+}
+
 var FrozoneBuildBadge = React.createClass({
     render: function() {
-        var b = this.props.build;
+        var st = this.props.state;
+
         var className = "label ";
-        if (b.state == "failed" || b.state == "canceled" ) {
+        if (st == "failed" || st == "canceled" ) {
             className += "label-danger";
-        } else if (b.state == "review-rejected" || b.state == "recheck") {
+        } else if (st == "review-rejected" || st == "recheck") {
             className += "label-warning";
-        } else if (b.state == "enqueued" || b.state == "preparing" || b.state == "started" || b.state == "in-review") {
+        } else if (st == "enqueued" || st == "preparing" || st == "started" || st == "in-review") {
             className += "label-info";
-        } else if (b.state == "success" || b.state == "review-okay" || b.state == "applied") {
+        } else if (st == "success" || st == "review-okay" || st == "applied") {
             className += "label-success";
         } else {
             className += "label-default";
         }
-        return (<span className={className}>{b.state}</span>);
+        return (<span className={className}>{st}</span>);
     }
 });
-
-var FrozonePatchPreview = React.createClass({
-    render: function() {
-        var shortDisplay = this.props.build.patchBundle.split("New patches:");
-        return <pre>{shortDisplay[0].trim()}</pre>;
-    }
-})
 
 var FrozoneBuildRow = React.createClass({
     getInitialState: function() {
@@ -39,22 +47,15 @@ var FrozoneBuildRow = React.createClass({
     },
 
     fetchData: function() {
-        $.ajax({
-            url: "/api/patch/" + this.props.build.value.patch,
-            dataType: 'json',
-            success: function(data) {
-                this.setState({ builds: data, patch: data });
-            }.bind(this),
-            error: function(xhr, status, err) {
-                console.error("patch", status, err.toString());
-            }.bind(this)
-        });
+        ajaxHelper("/api/patch/" + this.props.build.value.patch, function(data) {
+            this.setState({ builds: data, patch: data });
+        }.bind(this));
     },
 
     render: function() {
         var build = this.props.build;
 
-        var badge = <FrozoneBuildBadge build={build.value} />;
+        var badge = <FrozoneBuildBadge state={build.value.state} />;
 
         return (<tr>
             <th>{build.key}</th>
@@ -78,16 +79,9 @@ var FrozoneOverview = React.createClass({
     },
 
     fetchData: function() {
-        $.ajax({
-            url: "/api/list-builds",
-            dataType: 'json',
-            success: function(data) {
-                this.setState({ builds: data });
-            }.bind(this),
-            error: function(xhr, status, err) {
-                console.error("list-builds", status, err.toString());
-            }.bind(this)
-        });
+        ajaxHelper("/api/list-builds", function(data) {
+            this.setState({ builds: data });
+        }.bind(this));
     },
 
     componentDidMount: function() {
@@ -134,63 +128,59 @@ var FrozoneBuildDetails = React.createClass({
         return {
             dataState: "loading",
             filesChanged: [],
-            build: null
+            logMessages: [],
+            build: null,
+            patch: null
         };
     },
 
     fetchData: function() {
-        $.ajax({
-            url: "/api/build/" + this.props.buildId,
-            dataType: 'json',
-            success: function(data) {
-                if (data.error) {
-                    console.error(data.error);
-                    this.setState({ dataState: "error" });
-                } else {
-                    this.setState({ dataState: "ok", build: data });
-                }
-            }.bind(this),
-            error: function(xhr, status, err) {
-                console.error("get-build-" + this.props.buildId, status, err.toString());
+        ajaxHelper("/api/build/" + this.props.buildId, function(data) {
+            if (data.error) {
+                console.error(data.error);
                 this.setState({ dataState: "error" });
-            }.bind(this)
-        });
+            } else {
+                this.setState({ dataState: "ok", build: data });
+                ajaxHelper("/api/patch/" + data.patch, function(data) {
+                    if (!data.error) {
+                        this.setState({ patch: data });
+                    }
+                }.bind(this));
+            }
+        }.bind(this), function() {
+            this.setState({ dataState: "error" });
+        }.bind(this));
     },
 
     getChangedFiles: function() {
-        $.ajax({
-            url: "/api/build/" + this.props.buildId + "/file-changes",
-            dataType: 'json',
-            success: function(data) {
-                this.setState({ filesChanged: data });
-            }.bind(this),
-            error: function(xhr, status, err) {
-                console.error("get-file-changes-" + this.props.buildId, status, err.toString());
-                this.setState({ filesChanged: [] });
-            }.bind(this)
-        });
+        ajaxHelper("/api/build/" + this.props.buildId + "/file-changes", function(data) {
+            this.setState({ filesChanged: data });
+        }.bind(this));
+    },
+
+    getLogHistory: function() {
+        ajaxHelper("/api/build/" + this.props.buildId + "/logs", function(data) {
+            this.setState({ logMessages: data });
+        }.bind(this));
     },
 
     cancel: function(e) {
         e.preventDefault();
         var b = this.state.build;
-
-        $.ajax({
-            url: "/api/build/" + this.props.buildId + "/cancel",
-            dataType: 'json',
-            success: function(data) {
-                this.fetchData();
-            }.bind(this),
-            error: function(xhr, status, err) {
-                console.error("build-" + this.props.buildId + "-cancel", status, err.toString());
-            }.bind(this)
-        });
+        ajaxHelper("/api/build/" + this.props.buildId + "/cancel", function(data) {
+            this.fetchData();
+        }.bind(this));
     },
 
     componentDidMount: function() {
-        this.props.timer = setInterval(this.fetchData, 10000);
+        this.props.timer = setInterval(function() {
+            this.fetchData();
+            this.getLogHistory();
+        }.bind(this), 10000);
+
         this.fetchData();
         this.getChangedFiles();
+        this.getLogHistory();
     },
 
     componentWillUnmount: function() {
@@ -204,18 +194,18 @@ var FrozoneBuildDetails = React.createClass({
             return (<h2>404 Build not found</h2>);
         } else {
             var b = this.state.build;
+            var p = this.state.patch;
 
             var cancelBox = <span></span>;
             var canCancel = true;
-            if(b.patchCanceledOn) {
+            if(b.state == "canceled") {
                 canCancel = false;
                 cancelBox = (<div className="alert alert-danger" role="alert">
-                    <strong>Patch was canceled: </strong>
-                    <span>{b.patchCancelReason ? b.patchCancelReason : "Reason unknown"}</span>
+                    <strong>Patch was canceled!</strong>
                 </div>);
             }
 
-            var canReview = !!(b.buildSuccessOn);
+            var canReview = !!(b.State == "success");
 
             var filesChanged = this.state.filesChanged.map(function (change) {
                 var label = <span className="label label-info">M</span>;
@@ -231,9 +221,20 @@ var FrozoneBuildDetails = React.createClass({
                 </li>);
             });
 
+            var logMessages = this.state.logMessages.map(function (logMessage) {
+                return (<tr key={logMessage.key}>
+                    <td>
+                        <h5><FrozoneBuildBadge state={logMessage.value.state} /> {logMessage.value.time}</h5>
+                        <code>{logMessage.value.message}</code>
+                    </td>
+                </tr>);
+            });
+
             return (<div>
             <div className="buildHeader clearFix">
-                <h2 className="pull-left"><FrozoneBuildBadge build={b} /> Build #{this.props.buildId}</h2>
+                <h2 className="pull-left">
+                    <FrozoneBuildBadge state={b.state} /> {p ? p.name : "?"} (#{this.props.buildId})
+                </h2>
 
                 <div className="buildButtons pull-right">
                     <button type="button" className="btn btn-danger" disabled={!canCancel} onClick={this.cancel}>Cancel patch</button>
@@ -244,7 +245,6 @@ var FrozoneBuildDetails = React.createClass({
 
             {cancelBox}
 
-            <FrozonePatchPreview build={b} />
                 <table className="table">
                     <tr>
                         <th>Interested People</th>
@@ -262,32 +262,8 @@ var FrozoneBuildDetails = React.createClass({
                         <th>Changes-Hash</th>
                         <td>{b.changesHash}</td>
                     </tr>
-                </table>
-
-                <h3>Lifecycle</h3>
-                <table className="table">
                     <tr>
-                        <th>Enqueued on</th>
-                        <td>{b.buildEnqueuedOn}</td>
-                    </tr>
-                    <tr>
-                        <th>Build started on</th>
-                        <td>{b.buildStartedOn}</td>
-                    </tr>
-                    <tr>
-                        <th>Build failed on</th>
-                        <td>{b.buildFailedOn ? b.buildFailedOn : ""}</td>
-                    </tr>
-                    <tr>
-                        <th>Build success on</th>
-                        <td>{b.buildSuccessOn ? b.buildSuccessOn : ""}</td>
-                    </tr>
-                </table>
-
-                <h3>Docker</h3>
-                <table className="table">
-                    <tr>
-                        <th>Image</th>
+                        <th>Docker-Image</th>
                         <td>{b.dockerImage ? b.dockerImage : "-"}</td>
                     </tr>
                 </table>
@@ -295,11 +271,12 @@ var FrozoneBuildDetails = React.createClass({
                 <h3>Files</h3>
                 <ul className="list-unstyled">{filesChanged}</ul>
 
-                <h3>Log</h3>
-                <pre>{b.buildMessage}</pre>
-
-                <h3>Bundle</h3>
-                <pre>{b.patchBundle}</pre>
+                <h3>Lifecycle</h3>
+                <table className="table">
+                    <tbody>
+                        {logMessages}
+                    </tbody>
+                </table>
             </div>);
         }
     }

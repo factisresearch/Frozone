@@ -15,7 +15,6 @@ restApi =
     do get "/list-builds" $
          do allBuilds <- runSQL $ DB.selectList [] [DB.Desc BuildRepositoryId, DB.LimitTo 50]
             json allBuilds
-
        get "/build/:buildId/cancel" $
          do Just (buildId :: BuildRepositoryId) <- param "buildId"
             runSQL $ updateBuildState buildId BuildCanceled  "Aborted by user"
@@ -29,7 +28,6 @@ restApi =
                   json (FrozoneError "Patch not found!")
               Just patch ->
                   json patch
-
        get "/build/:buildId" $
          do Just (buildId :: BuildRepositoryId) <- param "buildId"
             mBuild <- runSQL $ DB.get buildId
@@ -38,7 +36,10 @@ restApi =
                   json (FrozoneError "Build not found!")
               Just build ->
                   json build
-
+       get "/build/:buildId/logs" $
+         do Just buildId <- param "buildId"
+            fullLogs <- runSQL $ DB.selectList [BuildLogRepo ==. buildId] [DB.Desc BuildLogTime, DB.LimitTo 50]
+            json fullLogs
        get "/build/:buildId/file-changes" $
          do Just (buildId :: BuildRepositoryId) <- param "buildId"
             allChanges <- runSQL $ DB.selectList [BundleChangeRepoId ==. buildId] []
