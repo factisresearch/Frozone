@@ -176,6 +176,7 @@ var FrozoneBuildDetails = React.createClass({
         this.props.timer = setInterval(function() {
             this.fetchData();
             this.getLogHistory();
+            this.getChangedFiles();
         }.bind(this), 10000);
 
         this.fetchData();

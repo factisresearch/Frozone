@@ -79,10 +79,12 @@ changedFilesFun (VCSPatchId patchId) (VCSPatchBundle fullBundleBS) =
                , vcs_data = Just r
                }
     where
+      searchNeedle =
+          let (patchDate, _) = BS.breakSubstring "-" patchId
+          in BS.concat ["**", patchDate, "\n Ignore-this:"]
       bundleBS =
-          let findNeedle = BS.concat ["Ignore-this: ", patchId]
-              (_, patchAndJunk) = BS.breakSubstring findNeedle fullBundleBS
-              (patch, _) = BS.breakSubstring "Ignore-this: " (BS.drop (BS.length findNeedle) patchAndJunk)
+          let (_, patchAndJunk) = BS.breakSubstring searchNeedle fullBundleBS
+              (patch, _) = BS.breakSubstring "Ignore-this: " (BS.drop (BS.length searchNeedle) patchAndJunk)
           in patch
 
       r = foldl handleLine HM.empty (BSC.split '\n' bundleBS)
