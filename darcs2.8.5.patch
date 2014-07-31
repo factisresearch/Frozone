@@ -1,0 +1,36 @@
+--- darcs-2.8.4/darcs.cabal	2013-02-06 07:07:21.000000000 +0100
++++ /Users/athiemann/devel/darcs-2.8.4/darcs.cabal	2014-07-28 18:27:00.000000000 +0200
+@@ -1,5 +1,5 @@
+ Name:           darcs
+-version:        2.8.4
++version:        2.8.5
+ License:        GPL
+ License-file:   COPYING
+ Author:         David Roundy <droundy@darcs.net>, <darcs-devel@darcs.net>
+@@ -396,7 +396,7 @@
+       build-depends: unix >= 1.0 && < 2.7
+ 
+     build-depends: bytestring >= 0.9.0 && < 0.11,
+-                   text       >= 0.11.0.6 && < 0.12.0.0,
++                   text       >= 0.11.0.6 && < 1.2,
+                    old-time   >= 1.0 && < 1.2,
+                    directory  >= 1.0.0.0 && < 1.3.0.0,
+                    process    >= 1.0.0.0 && < 1.2.0.0,
+@@ -574,7 +574,7 @@
+     build-depends: unix >= 1.0 && < 2.7
+ 
+   build-depends:   bytestring >= 0.9.0 && < 0.11,
+-                   text       >= 0.11.0.6 && < 0.12.0.0,
++                   text       >= 0.11.0.6 && < 1.2,
+                    old-time   >= 1.0 && < 1.2,
+                    directory  >= 1.0.0.0 && < 1.3.0.0,
+                    process    >= 1.0.0.0 && < 1.2.0.0,
+@@ -769,7 +769,7 @@
+ 
+     build-depends: bytestring >= 0.9.0 && < 0.11,
+                    haskeline    >= 0.6.3 && < 0.8,
+-                   text       >= 0.11.0.6 && < 0.12.0.0,
++                   text       >= 0.11.0.6 && < 1.2,
+                    old-time   >= 1.0 && < 1.2,
+                    directory  >= 1.0.0.0 && < 1.3.0.0,
+                    process    >= 1.0.0.0 && < 1.2.0.0,
