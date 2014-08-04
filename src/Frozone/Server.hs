@@ -37,9 +37,9 @@ runServer fc =
           SessionCfg "FrozoneCookie" 3600 40 ()
 
 
-serverApp :: FrozoneApp
+serverApp :: FrozoneApp ()
 serverApp =
     do middleware (staticPolicy (addBase "static"))
        get "/" indexPage
-       subcomponent "/bundle" $ bundleApi
-       subcomponent "/api" $ restApi
+       buildQueue <- subcomponent "/bundle" $ bundleApi
+       subcomponent "/api" $ restApi buildQueue

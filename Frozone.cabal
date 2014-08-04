@@ -15,7 +15,7 @@ executable Frozone
   main-is:             Main.hs
   build-depends:       base ==4.6.*,
                        MissingH >=1.2 && <1.3,
-                       Spock >=0.6.1.2 && <0.7,
+                       Spock >=0.6.1.3 && <0.7,
                        Spock-worker >=0.2 && <0.3,
                        aeson >=0.7 && <0.8,
                        base16-bytestring >=0.1 && <0.2,

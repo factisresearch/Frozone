@@ -34,6 +34,54 @@ var FrozoneBuildBadge = React.createClass({
     }
 });
 
+var FrozoneCollection = React.createClass({
+    getInitialState: function() {
+        return {
+            patches: [],
+            collection: null
+        }
+    },
+
+    fetchData: function() {
+        ajaxHelper("/api/collection/" + this.props.collectionId, function (collection) {
+            this.setState({
+                collection: collection
+            });
+        }.bind(this));
+        ajaxHelper("/api/collection/" + this.props.collectionId + "/patches", function (patches) {
+            this.setState({
+                patches: patches
+            });
+        }.bind(this));
+    },
+
+    componentDidMount: function() {
+        this.fetchData();
+    },
+
+    render: function() {
+        var c = this.state.collection;
+
+        return (<div>
+            <h2>{c ? c.name : "Loading..."}</h2>
+
+
+            <table className="table table-hover">
+                <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Created on</th>
+                    <th>Patch</th>
+                    <th>Status</th>
+                </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </div>)
+    }
+});
+
 var FrozoneBuildRow = React.createClass({
     getInitialState: function() {
         return {
@@ -60,13 +108,12 @@ var FrozoneBuildRow = React.createClass({
         return (<tr>
             <th>{build.key}</th>
             <td>{build.value.createdOn}</td>
-            <td>{this.state.patch ? this.state.patch.name : "Loading..."}</td>
-            <td>{badge}</td>
             <td>
                 <a href={"#/build/" + build.key} title="More Information">
-                    <i className="fa fa-info-circle"></i>
+                    {this.state.patch ? this.state.patch.name : "Loading..."}
                 </a>
             </td>
+            <td>{badge}</td>
             </tr>);
     }
 });
@@ -105,7 +152,6 @@ var FrozoneOverview = React.createClass({
                 <th>Created on</th>
                 <th>Patch</th>
                 <th>Status</th>
-                <th>Actions</th>
             </tr>
             </thead>
             <tbody>
@@ -172,6 +218,14 @@ var FrozoneBuildDetails = React.createClass({
         }.bind(this));
     },
 
+    rebuild: function(e) {
+        e.preventDefault();
+        var b = this.state.build;
+        ajaxHelper("/api/build/" + this.props.buildId + "/rebuild", function(data) {
+            this.fetchData();
+        }.bind(this));
+    },
+
     componentDidMount: function() {
         this.props.timer = setInterval(function() {
             this.fetchData();
@@ -206,7 +260,8 @@ var FrozoneBuildDetails = React.createClass({
                 </div>);
             }
 
-            var canReview = !!(b.State == "success");
+            var canReview = (b.State == "success");
+            var canRebuild = (b.State != "enqueued" && b.State != "preparing" && b.State != "started");
 
             var filesChanged = this.state.filesChanged.map(function (change) {
                 var label = <span className="label label-info">M</span>;
@@ -238,6 +293,7 @@ var FrozoneBuildDetails = React.createClass({
                 </h2>
 
                 <div className="buildButtons pull-right">
+                    <button type="button" className="btn btn-info" disabled={!canRebuild} onClick={this.rebuild}>Rebuild patch</button>
                     <button type="button" className="btn btn-danger" disabled={!canCancel} onClick={this.cancel}>Cancel patch</button>
                     <a className="btn btn-info" disabled={!canReview} href={"#/build/" + this.props.buildId +"/review"}>Review patch</a>
                     <button type="button" className="btn btn-success" disabled={true}>Apply patch</button>
@@ -266,6 +322,10 @@ var FrozoneBuildDetails = React.createClass({
                     <tr>
                         <th>Docker-Image</th>
                         <td>{b.dockerImage ? b.dockerImage : "-"}</td>
+                    </tr>
+                    <tr>
+                        <th>Patch Group</th>
+                        <td><a href={(p ? "#/collection/" + p.group : "#")}>#{p ? p.group : "?"}</a></td>
                     </tr>
                 </table>
 
@@ -343,6 +403,9 @@ $(function() {
     });
     crossroads.addRoute('build/{build}/review', function (buildId) {
         renderComp(<FrozoneReview buildId={buildId} />);
+    });
+    crossroads.addRoute('collection/{collectionId}', function (collectionId) {
+        renderComp(<FrozoneCollection collectionId={collectionId} />);
     });
 
     //setup hasher

@@ -11,7 +11,7 @@ import Web.Spock
 import Web.Spock.Worker
 import qualified Data.Text as T
 
-type FrozoneApp = SpockM Connection () FrozoneState ()
+type FrozoneApp a = SpockM Connection () FrozoneState a
 type FrozoneAction a = SpockAction Connection () FrozoneState a
 type FrozoneWorker a = WebStateM Connection () FrozoneState a
 

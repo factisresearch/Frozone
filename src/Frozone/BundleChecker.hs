@@ -46,7 +46,7 @@ data NewBundleArrived
    , _nba_patchQueue :: WorkQueue BuildRepositoryId
    }
 
-bundleApi :: FrozoneApp
+bundleApi :: FrozoneApp (WorkQueue BuildRepositoryId)
 bundleApi =
     do runSQL closeDangelingActions
        st <- getState
@@ -66,6 +66,7 @@ bundleApi =
                             sendNotifications buildRepoId
                   return WorkError
        post "/check" $ bundleCheckAction bundleWorker patchWorker
+       return patchWorker
 
 bundleCheckAction :: WorkQueue NewBundleArrived -> WorkQueue BuildRepositoryId -> FrozoneAction ()
 bundleCheckAction wq rwq =
