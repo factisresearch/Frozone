@@ -24,6 +24,12 @@ restApi buildQueue =
                   json (FrozoneError "Patch not found!")
               Just patchVal ->
                   json patchVal
+       get "/build/patch/:patchId" $
+           do Just (patchId :: PatchId) <- param "patchId"
+              buildList <- runSQL $ DB.selectList [BuildRepositoryPatch ==. patchId] [DB.Desc BuildRepositoryId]
+              case buildList of
+                [] -> json (FrozoneError "No builds found belonging to this patch!")
+                xs -> json xs
        get "/build/:buildId" $
          do Just (buildId :: BuildRepositoryId) <- param "buildId"
             mBuild <- runSQL $ DB.get buildId
@@ -67,7 +73,7 @@ restApi buildQueue =
                   json collection
        get "/collection/:collectionId/patches" $
          do Just (collectionId :: PatchCollectionId) <- param "collectionId"
-            patchList <- runSQL $ DB.selectList [PatchGroup ==. collectionId] []
+            patchList <- runSQL $ DB.selectList [PatchGroup ==. collectionId] [DB.Desc PatchId, DB.LimitTo 50]
             json patchList
        get "/collection/:collectionId/close" $
          do Just (collectionId :: PatchCollectionId) <- param "collectionId"

@@ -10,6 +10,9 @@ import Frozone.BundleChecker
 import Frozone.RestApi
 import Frozone.WebFrontend
 import Frozone.VCS
+import Frozone.Util.Logging
+
+import Cook.Clean
 
 import Control.Monad.Logger
 import Database.Persist.Sqlite (createSqlitePool, runSqlPool, runMigration)
@@ -31,6 +34,10 @@ runServer fc =
                      "darcs" -> darcsVCS
                      _ -> error "Unkown VCS System! Currently supported: darcs"
                }
+       doLog LogInfo "Cleaning up old docker images"
+       cookClean (fc_storageDir fc) 10
+
+       doLog LogInfo "Launching web service..."
        spock (fc_httpPort fc) sessCfg (PCConduitPool pool) fcState serverApp
     where
       sessCfg =

@@ -38,6 +38,7 @@ var FrozoneCollection = React.createClass({
     getInitialState: function() {
         return {
             patches: [],
+            builds: {},
             collection: null
         }
     },
@@ -52,6 +53,15 @@ var FrozoneCollection = React.createClass({
             this.setState({
                 patches: patches
             });
+            patches.map(function(p) {
+                ajaxHelper("/api/build/patch/" + p.key, function (buildIds) {
+                    var builds = this.state.builds;
+                    builds[p.key] = buildIds;
+                    this.setState({
+                        builds: builds
+                    });
+                }.bind(this));
+            }.bind(this));
         }.bind(this));
     },
 
@@ -59,23 +69,65 @@ var FrozoneCollection = React.createClass({
         this.fetchData();
     },
 
+    closeCollection: function() {
+        ajaxHelper("/api/collection/" + this.props.collectionId + "/close", function() {
+            this.fetchData();
+        }.bind(this));
+    },
+
     render: function() {
         var c = this.state.collection;
+        var buildRows = this.state.patches.map(function (p) {
+            var buildIds = (this.state.builds.hasOwnProperty(p.key) ? this.state.builds[p.key] : []);
+            var buildLinks = buildIds.map(function (b) {
+                return (<li key={b.key}>
+                    <a href={"#/build/" + b.key}><FrozoneBuildBadge state={b.value.state} /> #{b.key}</a>
+                </li>);
+            });
+
+            return (<tr key={p.key}>
+                <td>{p.value.date}</td>
+                <td>{p.value.name}</td>
+                <td>{p.value.author}</td>
+                <td>
+                    <ul className="list-unstyled">
+                        {buildLinks}
+                    </ul>
+                </td>
+            </tr>);
+        }.bind(this));
+
+        var className = "label label-success";
+        var stateDesc = "open";
+        var canClose = true;
+        if (c && !c.open) {
+            className = "label label-danger";
+            stateDesc = "closed";
+            canClose = false;
+        }
 
         return (<div>
-            <h2>{c ? c.name : "Loading..."}</h2>
+            <div className="buildHeader clearFix">
+                <h2 className="pull-left">
+                    <h2><span className={className}>{stateDesc}</span> Collection: {c ? c.name : "Loading..."}</h2>
+                </h2>
 
+                <div className="buildButtons pull-right">
+                    <button type="button" className="btn btn-danger" disabled={!canClose} onClick={this.closeCollection}>Close collection</button>
+                </div>
+            </div>
 
             <table className="table table-hover">
                 <thead>
                 <tr>
-                    <th>ID</th>
-                    <th>Created on</th>
+                    <th>Date</th>
                     <th>Patch</th>
-                    <th>Status</th>
+                    <th>Author</th>
+                    <th>Builds</th>
                 </tr>
                 </thead>
                 <tbody>
+                    {buildRows}
                 </tbody>
             </table>
         </div>)
@@ -260,8 +312,8 @@ var FrozoneBuildDetails = React.createClass({
                 </div>);
             }
 
-            var canReview = (b.State == "success");
-            var canRebuild = (b.State != "enqueued" && b.State != "preparing" && b.State != "started");
+            var canReview = (b.state == "success");
+            var canRebuild = (b.state != "enqueued" && b.state != "preparing" && b.state != "started");
 
             var filesChanged = this.state.filesChanged.map(function (change) {
                 var label = <span className="label label-info">M</span>;
@@ -324,7 +376,7 @@ var FrozoneBuildDetails = React.createClass({
                         <td>{b.dockerImage ? b.dockerImage : "-"}</td>
                     </tr>
                     <tr>
-                        <th>Patch Group</th>
+                        <th>Patch Collection</th>
                         <td><a href={(p ? "#/collection/" + p.group : "#")}>#{p ? p.group : "?"}</a></td>
                     </tr>
                 </table>
