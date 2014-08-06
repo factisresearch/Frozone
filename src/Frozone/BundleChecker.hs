@@ -48,22 +48,22 @@ data NewBundleArrived
 
 bundleApi :: FrozoneApp (WorkQueue BuildRepositoryId)
 bundleApi =
-    do runSQL closeDangelingActions
-       st <- getState
+    do st <- getState
+       runSQL (closeDangelingActions (fc_mailConfig $ fs_config st))
        let concurrentBuilds = fc_concurrentBuilds $ fs_config st
            bundleQueue = concurrentBuilds * 3
            patchQueue = bundleQueue * 5
        bundleWorker <-
            newWorker (WorkerConfig bundleQueue WorkerNoConcurrency) newBundleArrived $ ErrorHandlerIO $ \errorMsg newBundle ->
                do doLog LogError $ "BundleWorker error: " ++ errorMsg
-                  sendEmail "Frozone <thiemann@cp-med.com>" [nba_email newBundle] "Bundle Error" (T.concat ["Build failed! \n\n ", T.pack errorMsg])
+                  sendEmail (fc_mailConfig $ fs_config st) "thiemann@cp-med.com" [nba_email newBundle] "Bundle Error" (T.concat ["Build failed! \n\n ", T.pack errorMsg])
                   return WorkError
        patchWorker <-
            newWorker (WorkerConfig patchQueue (WorkerConcurrentBounded concurrentBuilds)) buildPatchBundle $ ErrorHandlerSpock $ \errorMsg buildRepoId ->
                do doLog LogError $ "Build in " ++ show buildRepoId ++ " failed: " ++ errorMsg
                   runSQL $
                          do updateBuildState buildRepoId BuildFailed (T.pack errorMsg)
-                            sendNotifications buildRepoId
+                            sendNotifications (fc_mailConfig $ fs_config st) buildRepoId
                   return WorkError
        post "/check" $ bundleCheckAction bundleWorker patchWorker
        return patchWorker
@@ -81,8 +81,8 @@ bundleCheckAction wq rwq =
          Nothing ->
              json (FrozoneError "No patch-bundle sent!")
 
-closeDangelingActions :: (PersistMonadBackend m ~ SqlBackend, MonadIO m, PersistQuery m, MonadSqlPersist m) => m ()
-closeDangelingActions =
+closeDangelingActions :: (PersistMonadBackend m ~ SqlBackend, MonadIO m, PersistQuery m, MonadSqlPersist m) => Maybe FrozoneSmtp -> m ()
+closeDangelingActions mSmtp =
     do liftIO (doLog LogInfo "Fixing dangeling actions...")
        dangelingBuilds <- DB.selectList ( [BuildRepositoryState ==. BuildEnqueued]
                                           ||. [BuildRepositoryState ==. BuildStarted]
@@ -91,9 +91,9 @@ closeDangelingActions =
     where
       closeDangeling build =
           do updateBuildState (entityKey build) BuildFailed "Dangeling after frozone restart"
-             sendNotifications (entityKey build)
+             sendNotifications mSmtp (entityKey build)
 
-sendNotifications buildRepoId =
+sendNotifications mSmtp buildRepoId =
     do mRepo <- DB.get buildRepoId
        case mRepo of
          Nothing ->
@@ -108,7 +108,7 @@ sendNotifications buildRepoId =
                          let subj = subject repo patch
                              recv = buildRepositoryNotifyEmail repo
                          doLog LogInfo ("Sending mail " ++ show subj ++ " to " ++ (T.unpack $ T.intercalate "," recv))
-                         liftIO $ sendEmail "Frozone <thiemann@cp-med.com>" recv subj msg
+                         liftIO $ sendEmail mSmtp "Frozone <thiemann@cp-med.com>" recv subj msg
     where
       subject repo patch =
           T.concat [ "[", prettyBuildState (buildRepositoryState repo), "] "
@@ -173,7 +173,7 @@ buildPatchBundle buildRepoId =
                                            runSQL $
                                                   do updateBuildState buildRepoId BuildSuccess (T.pack msg)
                                                      DB.update buildRepoId [ BuildRepositoryDockerImage =. (Just imageName) ]
-                                                     sendNotifications buildRepoId
+                                                     sendNotifications (fc_mailConfig $ fs_config st) buildRepoId
                                            return WorkComplete
                                     _ ->
                                         throwError "Cook build failed!"
@@ -337,6 +337,7 @@ prepareForBuild vcs patchBundleBS branch email wq patch =
 
       enqueuePatch changes targetDir changeMap preApply =
           do now <- liftIO getCurrentTime
+             st <- getState
              let changesHash =
                      T.decodeUtf8 $ B16.encode $ SHA1.hash changes
                  rp =
@@ -369,4 +370,4 @@ prepareForBuild vcs patchBundleBS branch email wq patch =
                     else runSQL $
                          do DB.update (entityKey repo) [ BuildRepositoryNotifyEmail =. nub (email : buildRepositoryNotifyEmail (entityVal repo)) ]
                             liftIO $ localLog "Nothing to do"
-                            sendNotifications (entityKey repo)
+                            sendNotifications (fc_mailConfig $ fs_config st) (entityKey repo)

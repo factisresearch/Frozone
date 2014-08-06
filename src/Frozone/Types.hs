@@ -25,6 +25,15 @@ data FrozoneConfig
    , fc_httpPort :: Int
    , fc_vcs :: String
    , fc_concurrentBuilds :: Int
+   , fc_mailConfig :: Maybe FrozoneSmtp
+   }
+
+data FrozoneSmtp
+   = FrozoneSmtp
+   { fs_host :: String
+   , fs_port :: Int
+   , fs_user :: Maybe String
+   , fs_password :: Maybe String
    }
 
 data FrozoneState
@@ -123,6 +132,7 @@ instance FromJSON BuildState where
     parseJSON _ = fail "Expecting string to parse as BuildState!"
 
 $(deriveJSON (jDrop 3) ''FrozoneConfig)
+$(deriveJSON (jDrop 3) ''FrozoneSmtp)
 $(deriveJSON (jDrop 3) ''FrozoneMessage)
 $(deriveJSON (jDrop 3) ''FrozoneError)
 $(deriveJSON (jDrop 4) ''FrozoneRepoCreated)

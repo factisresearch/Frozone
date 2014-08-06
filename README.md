@@ -12,23 +12,25 @@ Frozone is far from alpha quality and heavily under development.  This is a desc
 # Install
 
 * From Source:
-```bash
-npm install -g react-tools
-git clone https://github.com/factisresearch/Frozone.git
-cd Frozone
-./build-helper.sh
-cabal update
-cabal sandbox init
-cd darcs-2.8.5 && cabal install
-cabal install --only-dependencies
-./build-run
-```
+Check the Dockerfile located at ./docker/Dockerfile
 
 * Docker:
 ```bash
 git clone https://github.com/factisresearch/Frozone.git
 cd Frozone
 docker build --rm -t [your_name_here]/frozone docker
+```
+
+# Run
+
+* Docker
+```bash
+docker run -v /var/run/docker.sock:/var/run/docker.sock -v $(which docker):$(which docker) -d -p 8080:8080 [your_name_here]/frozone
+```
+
+* Without docker
+```bash
+./Frozone [config_file]
 ```
 
 # Usage
