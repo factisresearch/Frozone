@@ -40,9 +40,32 @@ data FrozoneState
    , fs_vcs :: VCSApi
    }
 
+type FrozoneMessage = Either FrozoneError FrozoneResponse
+
+data FrozoneResponse
+    = FrozoneCmdLogin
+    | FrozoneCmdLogout
+    | FrozoneGetBuilds [BuildRepository]
+    -- patch
+    | FrozoneGetPatch Patch
+    | FrozoneGetPatchBuilds [BuildRepository]
+    -- build repository
+    | FrozoneGetBuild BuildRepository
+    | FrozoneGetBuildLogs [BuildLog]
+    | FrozoneGetBuildFileChanges [BundleChange] -- hash
+    | FrozoneCmdBuildCancel
+    | FrozoneCmdBuildRetry
+    -- patch collection
+    | FrozoneGetCollection PatchCollection
+    | FrozoneGetCollectionPatches [Patch]
+    | FrozoneCmdCollectionClose
+    | FrozoneInfo T.Text
+
+{-
 data FrozoneMessage
    = FrozoneMessage
    { fm_message :: T.Text }
+-}
 
 data FrozoneError
    = FrozoneError
@@ -61,7 +84,7 @@ data RepoConfig
 
 
 $(deriveJSON (jDrop 3) ''FrozoneConfig)
-$(deriveJSON (jDrop 3) ''FrozoneMessage)
+$(deriveJSON (jDrop 3) ''FrozoneResponse)
 $(deriveJSON (jDrop 3) ''FrozoneError)
 $(deriveJSON (jDrop 4) ''FrozoneRepoCreated)
 $(deriveJSON (jDrop 3) ''RepoConfig)

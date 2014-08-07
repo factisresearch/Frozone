@@ -77,7 +77,7 @@ bundleCheckAction wq rwq =
          Just patchBundleBS ->
              do bs <- liftIO $ BS.readFile (uf_tempLocation patchBundleBS)
                 addWork WorkNow (NewBundleArrived repo email bs rwq) wq
-                json (FrozoneMessage "Patch bundle will now be processed!")
+                json (FrozoneInfo "Patch bundle will now be processed!")
          Nothing ->
              json (FrozoneError "No patch-bundle sent!")
 
