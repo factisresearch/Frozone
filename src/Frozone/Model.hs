@@ -7,9 +7,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE EmptyDataDecls #-}
-module Frozone.Model where
+module Frozone.Model(
+    module Frozone.ModelTypes
+    , module Frozone.Model
+) where
 
-import Frozone.Types
+import Frozone.ModelTypes
 
 import Control.Monad.Trans
 import Database.Persist
@@ -19,7 +22,33 @@ import Data.Time
 
 import qualified Data.Text as T
 
+{-
+    PatchBundle
+    ->
+    [Patch] 
+-}
+
 share [mkPersist sqlSettings, mkMigrate "migrateCore"] [persistLowerCase|
+
+User json
+     name T.Text
+     password T.Text
+     email T.Text
+     isAdmin Bool
+     UniqueUserName name
+     UniqueEmail email
+
+Project json
+     name T.Text
+     shortName T.Text
+     sshKey T.Text
+     users [UserId]
+
+Session json
+     user UserId
+     validUntil UTCTime
+     UniqueUserId user
+
 BundleData json
      bundleHash T.Text
      filePath FilePath

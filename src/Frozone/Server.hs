@@ -5,7 +5,6 @@
 module Frozone.Server where
 
 import Frozone.Types
-import Frozone.Model
 import Frozone.BundleChecker
 import Frozone.RestApi
 import Frozone.WebFrontend
@@ -18,6 +17,7 @@ import Control.Monad.Logger
 import Database.Persist.Sqlite (createSqlitePool, runSqlPool, runMigration)
 import Network.Wai.Middleware.Static
 import Web.Spock
+import Web.Spock.Auth
 import Control.Monad.Trans.Resource
 import qualified Data.Text as T
 
@@ -40,8 +40,11 @@ runServer fc =
        doLog LogInfo "Launching web service..."
        spock (fc_httpPort fc) sessCfg (PCConduitPool pool) fcState serverApp
     where
-      sessCfg =
-          SessionCfg "FrozoneCookie" 3600 40 ()
+        sessCfg = authSessCfg $ AuthCfg
+            { ac_sessionTTL = 3600
+            , ac_emptySession = () }
+        {-sessCfg =
+          SessionCfg "FrozoneCookie" 3600 40 ()-}
 
 
 serverApp :: FrozoneApp ()

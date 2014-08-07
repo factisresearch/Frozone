@@ -2,18 +2,41 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Frozone.RestApi where
 
+import Frozone.User
 import Frozone.Types
-import Frozone.Model
+
 import Frozone.Util.Db
+import Frozone.Util.Logging
 
 import Web.Spock hiding (patch)
 import Web.Spock.Worker
-import Database.Persist ((==.), (=.))
+import Web.Spock.Auth hiding (userRoute)
+import qualified Web.Spock.Auth as Spock
+import qualified Data.Text as T
+
 import qualified Database.Persist as DB
+import qualified Database.Persist.Sql as DB
+import Database.Persist ((==.), (=.))
+
 
 restApi :: WorkQueue BuildRepositoryId -> FrozoneApp ()
 restApi buildQueue =
-    do get "/list-builds" $
+    do post "/login" $
+         do Just name <- param "name"
+            Just password <- param "password" :: FrozoneAction (Maybe T.Text)
+            mUserId <- runSQL $ checkUser name password
+            case mUserId of
+              Just userId ->
+                do sessionId <- runSQL $ sessionIntoDB userId
+                   markAsLoggedIn sessionId
+                   json $ FrozoneMessage "login ok"
+              Nothing -> doLog LogNote "login failed"
+       userRoute GET [] "/logout" $ \(userId, _) ->
+         do 
+            runSQL $ sessionDelFromDB userId
+            markAsGuest
+            json $ FrozoneMessage "logout successful" 
+       get "/list-builds" $
          do allBuilds <- runSQL $ DB.selectList [] [DB.Desc BuildRepositoryId, DB.LimitTo 50]
             json allBuilds
        get "/patch/:patchId" $
@@ -79,3 +102,20 @@ restApi buildQueue =
          do Just (collectionId :: PatchCollectionId) <- param "collectionId"
             runSQL $ DB.update collectionId [ PatchCollectionOpen =. False ]
             json (FrozoneMessage "Collection closed")
+
+userRoute
+    :: StdMethod -> [UserRights] -> T.Text
+    -> ((UserId, User) -> FrozoneAction ()) -> SpockM DB.Connection FrozoneSession FrozoneState ()
+userRoute = Spock.userRoute noAccesHandler (runSQL . userFromSession) checkRights
+    where
+      noAccesHandler reason = 
+        do return () -- <- to do: set state
+           json $ case reason of
+             NotEnoughRights -> FrozoneError "not enough rights"
+             NotLoggedIn -> FrozoneError "not logged in"
+             NotValidUser -> FrozoneError "not valid user"
+
+      checkRights (_, user) necessaryRights =
+        if "admin" `elem` necessaryRights
+        then return $ userIsAdmin user
+        else return $ True
