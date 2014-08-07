@@ -36,11 +36,15 @@ restApi buildQueue =
             runSQL $ sessionDelFromDB userId
             markAsGuest
             json $ FrozoneCmdLogout
-       --userRoute GET [] "/list-builds" $ \(userId, user) ->
-       get "/list-builds" $
+       userRoute GET [] "/list-builds" $ \_ ->
+       --get "/list-builds" $
          do allBuilds <- runSQL $ DB.selectList [] [DB.Desc BuildRepositoryId, DB.LimitTo 50]
             json $ FrozoneGetBuilds $ map DB.entityVal allBuilds
-       get "/patch/:patchId" $ -- return patch info
+       userRoute GET [] "/patch:patchId" $ 
+         withPatch "patchId" "Patch not found!" $ \((userId,_),(patchId,patch)) -> 
+            json $ FrozoneGetPatch patch
+{-
+         get "/patch/:patchId" $ -- return patch info
          do Just (patchId :: PatchId) <- param "patchId"
             mPatch <- runSQL $ DB.get patchId
             case mPatch of
@@ -48,12 +52,25 @@ restApi buildQueue =
                   json (FrozoneError "Patch not found!")
               Just patchVal ->
                   json $ FrozoneGetPatch patchVal
+-}
+       userRoute GET [] "/patch:patchId" $ 
+         withPatch "patchId" "Patch not found" $ \((userId,_),(patchId,patch)) -> 
+           do buildList <- runSQL $ DB.selectList [BuildRepositoryPatch ==. patchId] [DB.Desc BuildRepositoryId]
+              case buildList of
+                [] -> json (FrozoneError "No builds found belonging to this patch!")
+                xs -> json $ FrozoneGetBuilds $ map DB.entityVal xs
+{-
        get "/build/patch/:patchId" $ -- return patch builds
            do Just (patchId :: PatchId) <- param "patchId"
               buildList <- runSQL $ DB.selectList [BuildRepositoryPatch ==. patchId] [DB.Desc BuildRepositoryId]
               case buildList of
                 [] -> json (FrozoneError "No builds found belonging to this patch!")
                 xs -> json $ FrozoneGetBuilds $ map DB.entityVal xs
+-}
+       userRoute GET [] "/patch:buildId" $ 
+         withBuild "buildId" "Build not found!" $ \((userId,_),(buildId,build)) ->
+           json $ FrozoneGetBuild build
+       {-
        get "/build/:buildId" $ -- return build info
          do Just (buildId :: BuildRepositoryId) <- param "buildId"
             mBuild <- runSQL $ DB.get buildId
@@ -62,19 +79,52 @@ restApi buildQueue =
                   json (FrozoneError "Build not found!")
               Just build ->
                   json $ FrozoneGetBuild build
+       -}
+       userRoute GET [] "/build/:buildId/logs" $ -- return build logs
+         withBuild "buildId" "Build not found!" $ \((userId,_),(buildId,build)) ->
+            do fullLogs <- runSQL $ DB.selectList [BuildLogRepo ==. buildId] [DB.Desc BuildLogTime, DB.LimitTo 50]
+               json $ FrozoneGetBuildLogs $ map DB.entityVal fullLogs
+       {-
        get "/build/:buildId/logs" $ -- return build logs
          do Just buildId <- param "buildId"
             fullLogs <- runSQL $ DB.selectList [BuildLogRepo ==. buildId] [DB.Desc BuildLogTime, DB.LimitTo 50]
             json $ FrozoneGetBuildLogs $ map DB.entityVal fullLogs
+       -}
+       userRoute GET [] "/build/:buildId/file-changes" $ -- return build file-changes
+         withBuild "buildId" "Build not found!" $ \((userId,_),(buildId,build)) ->
+            do allChanges <- runSQL $ DB.selectList [BundleChangeRepoId ==. buildId] []
+               json $ FrozoneGetBuildFileChanges $ map DB.entityVal allChanges
+       {-
        get "/build/:buildId/file-changes" $ -- return build file-changes
          do Just (buildId :: BuildRepositoryId) <- param "buildId"
             allChanges <- runSQL $ DB.selectList [BundleChangeRepoId ==. buildId] []
             json $ FrozoneGetBuildFileChanges $ map DB.entityVal allChanges
+       -}
+       userRoute GET [] "/build/:buildId/cancel" $ -- command: cancel build
+         withBuild "buildId" "Build not found!" $ \((userId,_),(buildId,build)) ->
+           do runSQL $ updateBuildState buildId BuildCanceled  "Aborted by user"
+              -- todo: kill docker build if running
+              json $ FrozoneCmdBuildCancel
+       {-
        get "/build/:buildId/cancel" $ -- command: cancel build
          do Just (buildId :: BuildRepositoryId) <- param "buildId"
             runSQL $ updateBuildState buildId BuildCanceled  "Aborted by user"
             -- todo: kill docker build if running
             json $ FrozoneCmdBuildCancel
+       -}
+       userRoute GET [] "/build/:buildId/rebuild" $ -- command: retry build
+         withBuild "buildId" "Build not found!" $ \((userId,_),(buildId,build)) ->
+            do mBuild <- runSQL $ DB.get buildId
+               case mBuild of
+                 Nothing ->
+                   json (FrozoneError "Build not found!")
+                 Just build ->
+                   if buildRepositoryState build > BuildStarted
+                   then do runSQL $ updateBuildState buildId BuildCanceled "Rebuilt scheduled"
+                           addWork WorkNow buildId buildQueue
+                           json FrozoneCmdBuildRetry
+                   else json (FrozoneError "Already building!")
+       {-
        get "/build/:buildId/rebuild" $ -- command: retry build
          do Just (buildId :: BuildRepositoryId) <- param "buildId"
             mBuild <- runSQL $ DB.get buildId
@@ -87,6 +137,11 @@ restApi buildQueue =
                           addWork WorkNow buildId buildQueue
                           json FrozoneCmdBuildRetry
                   else json (FrozoneError "Already building!")
+       -}
+       userRoute GET [] "/collection/:collectionId" $ -- return collection
+         withPatchCollection "collectionId" "Collection not found!" $ \((userId,_),(collectionId,collection)) ->
+           json $ FrozoneGetCollection collection
+       {-
        get "/collection/:collectionId" $ -- return collection
          do Just (collectionId :: PatchCollectionId) <- param "collectionId"
             mCollection <- runSQL $ DB.get collectionId
@@ -95,20 +150,45 @@ restApi buildQueue =
                   json (FrozoneError "Collection not found!")
               Just collection ->
                   json $ FrozoneGetCollection collection
+       -}
+       userRoute GET [] "/collection/:collectionId/patches" $ -- return collection patches
+         withPatchCollection "collectionId" "Collection not found!" $ \((userId,_),(collectionId,collection)) ->
+            do patchList <- runSQL $ DB.selectList [PatchGroup ==. collectionId] [DB.Desc PatchId, DB.LimitTo 50]
+               json $ FrozoneGetCollectionPatches $ map DB.entityVal patchList
+       {-
        get "/collection/:collectionId/patches" $ -- return collection patches
          do Just (collectionId :: PatchCollectionId) <- param "collectionId"
             patchList <- runSQL $ DB.selectList [PatchGroup ==. collectionId] [DB.Desc PatchId, DB.LimitTo 50]
             json $ FrozoneGetCollectionPatches $ map DB.entityVal patchList
+       -}
+       userRoute GET [] "/collection/:collectionId/close" $ -- command: collection close
+         withPatchCollection "collectionId" "Collection not found!" $ \((userId,_),(collectionId,collection)) -> 
+            do runSQL $ DB.update collectionId [ PatchCollectionOpen =. False ]
+               json FrozoneCmdCollectionClose
+       {-
        get "/collection/:collectionId/close" $ -- command: collection close
          do Just (collectionId :: PatchCollectionId) <- param "collectionId"
             runSQL $ DB.update collectionId [ PatchCollectionOpen =. False ]
             json FrozoneCmdCollectionClose
+       -}
 
-{-
-userInProject :: ((UserId,User) -> FrozoneAction a) -> ((UserId,User) -> FrozoneAction a)
-userInProject f (userId,user) = 
-    do guard
--}
+withPatch :: T.Text -> T.Text -> (((UserId,User), (PatchId,Patch)) -> FrozoneAction ()) -> ((UserId,User) -> FrozoneAction ())
+withPatch name error f (userId,user) = 
+    do Just id <- param name
+       mVal <- runSQL $ DB.get id
+       maybe (json $ FrozoneError error ) (\val -> f ((userId,user),(id,val))) mVal
+
+withBuild :: T.Text -> T.Text -> (((UserId,User), (BuildRepositoryId,BuildRepository)) -> FrozoneAction ()) -> ((UserId,User) -> FrozoneAction ())
+withBuild name error f (userId,user) = 
+    do Just id <- param name
+       mVal <- runSQL $ DB.get id
+       maybe (json $ FrozoneError error ) (\val -> f ((userId,user),(id,val))) mVal
+
+withPatchCollection :: T.Text -> T.Text -> (((UserId,User), (PatchCollectionId,PatchCollection)) -> FrozoneAction ()) -> ((UserId,User) -> FrozoneAction ())
+withPatchCollection name error f (userId,user) = 
+    do Just id <- param name
+       mVal <- runSQL $ DB.get id
+       maybe (json $ FrozoneError error ) (\val -> f ((userId,user),(id,val))) mVal
 
 userRoute
     :: StdMethod -> [UserRights] -> T.Text
