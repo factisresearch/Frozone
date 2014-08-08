@@ -18,19 +18,29 @@ import qualified Database.Persist as DB
 import qualified Database.Persist.Sql as DB
 import Database.Persist ((==.), (=.))
 
+import Control.Monad
+
+maybeError :: LogLevel -> String -> T.Text -> Maybe a -> (a -> FrozoneAction ()) -> FrozoneAction ()
+maybeError logLevel logMsg jsonMsg ma =
+    flip (maybe (do { doLog logLevel logMsg; json $ FrozoneError jsonMsg })) ma
+
 
 restApi :: WorkQueue BuildRepositoryId -> FrozoneApp ()
 restApi buildQueue =
     do post "/login" $
-         do Just name <- param "name"
-            Just password <- param "password" :: FrozoneAction (Maybe T.Text)
-            mUserId <- runSQL $ checkUser name password
-            case mUserId of
-              Just userId ->
-                do sessionId <- runSQL $ sessionIntoDB userId
-                   markAsLoggedIn sessionId
-                   json $ FrozoneCmdLogin
-              Nothing -> doLog LogNote "login failed"
+         do mName <- param "name"
+            mPassword <- param "password" :: FrozoneAction (Maybe T.Text)
+            let mNameAndPassword = (uncurry $ liftM2 (,)) (mName,mPassword) :: Maybe (T.Text,T.Text)
+            maybeError LogNote "expecting fields name, password" "expecting fields name, password" mNameAndPassword $ \(name,password) ->
+              do mUserId <- runSQL $ checkUser name password
+                 case mUserId of
+                   Just userId ->
+                     do sessionId <- runSQL $ sessionIntoDB userId
+                        markAsLoggedIn sessionId
+                        json $ FrozoneCmdLogin
+                   Nothing ->
+                     do doLog LogNote "login failed"
+                        json $ FrozoneError "login failed"
        userRoute GET [] "/logout" $ \(userId, _) ->
          do 
             runSQL $ sessionDelFromDB userId
@@ -39,16 +49,16 @@ restApi buildQueue =
        userRoute GET [] "/list-builds" $ \_ ->
          do allBuilds <- runSQL $ DB.selectList [] [DB.Desc BuildRepositoryId, DB.LimitTo 50]
             json $ FrozoneGetBuilds $ map DB.entityVal allBuilds
-       userRoute GET [] "/patch:patchId" $ -- return patch info
+       userRoute GET [] "/patch/:patchId" $ -- return patch info
          withPatch "patchId" "Patch not found!" $ \((userId,_),(patchId,patch)) -> 
             json $ FrozoneGetPatch patch
-       userRoute GET [] "/patch:patchId" $ -- return patch builds
+       userRoute GET [] "/build/patch/:patchId" $ -- return patch builds
          withPatch "patchId" "Patch not found" $ \((userId,_),(patchId,patch)) -> 
            do buildList <- runSQL $ DB.selectList [BuildRepositoryPatch ==. patchId] [DB.Desc BuildRepositoryId]
               case buildList of
                 [] -> json (FrozoneError "No builds found belonging to this patch!")
                 xs -> json $ FrozoneGetBuilds $ map DB.entityVal xs
-       userRoute GET [] "/patch:buildId" $ -- return build info
+       userRoute GET [] "/build/patch/:buildId" $ -- return build info
          withBuild "buildId" "Build not found!" $ \((userId,_),(buildId,build)) ->
            json $ FrozoneGetBuild build
        userRoute GET [] "/build/:buildId/logs" $ -- return build logs
@@ -90,21 +100,24 @@ restApi buildQueue =
 
 withPatch :: T.Text -> T.Text -> (((UserId,User), (PatchId,Patch)) -> FrozoneAction ()) -> ((UserId,User) -> FrozoneAction ())
 withPatch name error f (userId,user) = 
-    do Just id <- param name
-       mVal <- runSQL $ DB.get id
-       maybe (json $ FrozoneError error ) (\val -> f ((userId,user),(id,val))) mVal
+    do mId <- param name
+       mVal <- maybe (return Nothing) (\id -> runSQL $ DB.get id) mId --runSQL $ DB.get id
+       let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
+       maybe (json $ FrozoneError error ) (\(id,val) -> f ((userId,user),(id,val))) mId_Val
 
 withBuild :: T.Text -> T.Text -> (((UserId,User), (BuildRepositoryId,BuildRepository)) -> FrozoneAction ()) -> ((UserId,User) -> FrozoneAction ())
 withBuild name error f (userId,user) = 
-    do Just id <- param name
-       mVal <- runSQL $ DB.get id
-       maybe (json $ FrozoneError error ) (\val -> f ((userId,user),(id,val))) mVal
+    do mId <- param name
+       mVal <- maybe (return Nothing) (\id -> runSQL $ DB.get id) mId --runSQL $ DB.get id
+       let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
+       maybe (json $ FrozoneError error ) (\(id,val) -> f ((userId,user),(id,val))) mId_Val
 
 withPatchCollection :: T.Text -> T.Text -> (((UserId,User), (PatchCollectionId,PatchCollection)) -> FrozoneAction ()) -> ((UserId,User) -> FrozoneAction ())
 withPatchCollection name error f (userId,user) = 
-    do Just id <- param name
-       mVal <- runSQL $ DB.get id
-       maybe (json $ FrozoneError error ) (\val -> f ((userId,user),(id,val))) mVal
+    do mId <- param name
+       mVal <- maybe (return Nothing) (\id -> runSQL $ DB.get id) mId --runSQL $ DB.get id
+       let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
+       maybe (json $ FrozoneError error ) (\(id,val) -> f ((userId,user),(id,val))) mId_Val
 
 userRoute
     :: StdMethod -> [UserRights] -> T.Text
