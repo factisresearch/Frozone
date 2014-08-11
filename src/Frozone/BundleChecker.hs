@@ -6,12 +6,16 @@
 module Frozone.BundleChecker ( bundleApi ) where
 
 import Frozone.Types
-import Frozone.Model
+--import Frozone.Model
+import Frozone.User
 import Frozone.VCS
+
 import Frozone.Util.Logging
 import Frozone.Util.Random
 import Frozone.Util.Email
 import Frozone.Util.Db
+import Frozone.Util.Rest
+
 
 import Control.Applicative
 import Control.Concurrent.STM
@@ -40,8 +44,10 @@ import qualified Database.Persist as DB
 
 data NewBundleArrived
    = NewBundleArrived
-   { _nba_repo :: String
-   , nba_email :: T.Text
+   { _nba_proj :: (ProjectId, Project)
+   --{ _nba_repo :: String
+   , _nba_user :: (UserId, User)
+   --, nba_email :: T.Text
    , _nba_patchBundle :: BS.ByteString
    , _nba_patchQueue :: WorkQueue BuildRepositoryId
    }
@@ -56,7 +62,7 @@ bundleApi =
        bundleWorker <-
            newWorker (WorkerConfig bundleQueue WorkerNoConcurrency) newBundleArrived $ ErrorHandlerIO $ \errorMsg newBundle ->
                do doLog LogError $ "BundleWorker error: " ++ errorMsg
-                  sendEmail "Frozone <thiemann@cp-med.com>" [nba_email newBundle] "Bundle Error" (T.concat ["Build failed! \n\n ", T.pack errorMsg])
+                  sendEmail "Frozone <thiemann@cp-med.com>" [userEmail $ snd $ _nba_user newBundle] "Bundle Error" (T.concat ["Build failed! \n\n ", T.pack errorMsg])
                   return WorkError
        patchWorker <-
            newWorker (WorkerConfig patchQueue (WorkerConcurrentBounded concurrentBuilds)) buildPatchBundle $ ErrorHandlerSpock $ \errorMsg buildRepoId ->
@@ -65,21 +71,32 @@ bundleApi =
                          do updateBuildState buildRepoId BuildFailed (T.pack errorMsg)
                             sendNotifications buildRepoId
                   return WorkError
-       post "/check" $ bundleCheckAction bundleWorker patchWorker
+       userRoute POST [] "/check" $
+         withProjectFromShortName "projShortName" "project not found" $ \(userKV,projKV) ->
+         --withRepo "repoId" "repository not found" $ \(userKV,repoKV) ->
+           bundleCheckAction (userKV,projKV) bundleWorker patchWorker
        return patchWorker
 
-bundleCheckAction :: WorkQueue NewBundleArrived -> WorkQueue BuildRepositoryId -> FrozoneAction ()
-bundleCheckAction wq rwq =
-    do Just repo <- param "target-repo"
+bundleCheckAction :: ((UserId,User),(ProjectId,Project)) -> WorkQueue NewBundleArrived -> WorkQueue BuildRepositoryId -> FrozoneAction ()
+bundleCheckAction ((userId,user),(projId,proj)) wq rwq =
+   {-
+       Just repo <- param "target-repo"
        Just email <- param "email"
-       allFiles <- files
-       case HM.lookup "patch-bundle" allFiles of
-         Just patchBundleBS ->
-             do bs <- liftIO $ BS.readFile (uf_tempLocation patchBundleBS)
-                addWork WorkNow (NewBundleArrived repo email bs rwq) wq
-                json (FrozoneInfo "Patch bundle will now be processed!")
-         Nothing ->
-             json (FrozoneError "No patch-bundle sent!")
+   -}
+    do let usersInProject = projectUsers proj :: [UserId]
+       if not (userId `elem` usersInProject)
+       then restError LogNote "check action not executed. reason: user not part of the project" "user not in project"
+       else
+       --let projectKV = runSQL $ buildRepoProject repo --runSQL $ projectFromRepoDB (repoId, repo)
+       --maybeError LogNote "check action not executed. reason: user not part of the project" "user not in project" mProjectKV $
+         do allFiles <- files
+            case HM.lookup "patch-bundle" allFiles of
+              Just patchBundleBS ->
+                  do bs <- liftIO $ BS.readFile (uf_tempLocation patchBundleBS)
+                     addWork WorkNow (NewBundleArrived (projId,proj) (userId,user) bs rwq) wq
+                     json (FrozoneInfo "Patch bundle will now be processed!")
+              Nothing ->
+                  json (FrozoneError "No patch-bundle sent!")
 
 closeDangelingActions :: (PersistMonadBackend m ~ SqlBackend, MonadIO m, PersistQuery m, MonadSqlPersist m) => m ()
 closeDangelingActions =
@@ -219,13 +236,13 @@ withVCS vcsAction okAction =
        else throwError (BSC.unpack $ vcs_stdErr resp)
 
 newBundleArrived :: FrozoneQueueWorker NewBundleArrived
-newBundleArrived (NewBundleArrived repo email patchBundleBS wq) =
+newBundleArrived (NewBundleArrived (projId,proj) (userId,user) patchBundleBS wq) =
     do st <- getState
        let bundleHash = T.decodeUtf8 $ B16.encode $ SHA1.hash patchBundleBS
            vcs = fs_vcs st
            localLog :: forall m. MonadIO m => String -> m ()
            localLog m = doLog LogInfo $ "[Bundle:" ++ T.unpack bundleHash ++ "] " ++ m
-       localLog $ "Bundle arrived. Sent by " ++ T.unpack email ++ " for " ++ repo
+       localLog $ "Bundle arrived. Sent by " ++ T.unpack (userName user) ++ " for " ++ T.unpack (projectName proj)
        mBundle <- runSQL $ DB.getBy (UniqueBundleHash bundleHash)
        bundleId <-
            case mBundle of
@@ -236,9 +253,9 @@ newBundleArrived (NewBundleArrived repo email patchBundleBS wq) =
                     now <- liftIO getCurrentTime
                     liftIO $ BS.writeFile bundleFp patchBundleBS
                     bundleId <- runSQL $ DB.insert (BundleData bundleHash bundleFp now)
-                    localLog $ "Pulling from " ++ repo
+                    localLog $ "Pulling from " ++ T.unpack (projectRepoLoc proj)
                     rawPatches <-
-                        withVCS ((vcs_cloneRepository vcs) (VCSSource repo) (VCSRepository fp)) $ \_ ->
+                        withVCS ((vcs_cloneRepository vcs) (VCSSource $ T.unpack $ projectRepoLoc proj) (VCSRepository fp)) $ \_ ->
                             do localLog "Getting the patches out of the bundle"
                                withVCS ((vcs_patchesFromBundle vcs) (VCSRepository fp) (VCSPatchBundle patchBundleBS)) $ \r ->
                                    return $ fromMaybe [] (vcs_data r)
@@ -264,7 +281,7 @@ newBundleArrived (NewBundleArrived repo email patchBundleBS wq) =
                  do localLog "Bundle already known!"
                     return $ entityKey bundle
        patches <- runSQL $ DB.selectList [ PatchBundle ==. bundleId ] []
-       mapM_ (prepareForBuild vcs patchBundleBS repo email wq) patches
+       mapM_ (prepareForBuild vcs patchBundleBS (userId,user) (projId,proj) wq) patches
        return WorkComplete
     where
       createGroupIfNotExists localLog patchCollName =
@@ -274,7 +291,7 @@ newBundleArrived (NewBundleArrived repo email patchBundleBS wq) =
                    return $ entityKey group
                [] ->
                    do _ <- localLog $ "Creating new PatchCollection " ++ show patchCollName
-                      runSQL $ DB.insert (PatchCollection patchCollName True)
+                      runSQL $ DB.insert (PatchCollection patchCollName projId True)
 
       toDbId :: [(VCSPatchId, PatchId)] -> VCSPatchId -> FrozoneQueueWorkerM PatchId
       toDbId patchIdMap rawPatchId =
@@ -305,17 +322,21 @@ newBundleArrived (NewBundleArrived repo email patchBundleBS wq) =
 
 prepareForBuild :: VCSApi
                 -> BS.ByteString
-                -> String
-                -> T.Text
+                -- -> String
+                -- -> T.Text
+                -> (UserId,User) -> (ProjectId,Project)
                 -> WorkQueue BuildRepositoryId
                 -> Entity Patch
                 -> FrozoneQueueWorkerM ()
-prepareForBuild vcs patchBundleBS branch email wq patch =
+prepareForBuild vcs patchBundleBS (userId,user) (projId,proj) wq patch =
+    let
+      branch = projectRepoLoc proj
+    in
     do st <- getState
        targetIdent <- liftIO $ randomB16Ident 10
        let targetDir = (fc_storageDir $ fs_config st) </> targetIdent
-       localLog $ "Will clone " ++ branch ++ " into " ++ targetDir
-       withVCS ((vcs_cloneRepository vcs) (VCSSource branch) (VCSRepository targetDir)) $ \_ ->
+       localLog $ "Will clone " ++ T.unpack branch ++ " into " ++ targetDir
+       withVCS ((vcs_cloneRepository vcs) (VCSSource $ T.unpack branch) (VCSRepository targetDir)) $ \_ ->
            withVCS ((vcs_changedFiles vcs) vcsId bundle) $ \r1 ->
                     do let Just changeMap = vcs_data r1
                        preApply <- liftIO $ loadChangeInfo changeMap targetDir preApplyContent
@@ -341,10 +362,11 @@ prepareForBuild vcs patchBundleBS branch email wq patch =
                      T.decodeUtf8 $ B16.encode $ SHA1.hash changes
                  rp =
                      BuildRepository
-                     { buildRepositoryBranch = T.pack branch
+                     { buildRepositoryProject = projId
+                     , buildRepositoryBranch = projectRepoLoc proj
                      , buildRepositoryPath = targetDir
                      , buildRepositoryCreatedOn = now
-                     , buildRepositoryNotifyEmail = [email]
+                     , buildRepositoryNotifyEmail = [userEmail user]
                      , buildRepositoryChangesHash = changesHash
                      , buildRepositoryPatch = entityKey patch
                      , buildRepositoryDockerImage = Nothing
@@ -360,13 +382,13 @@ prepareForBuild vcs patchBundleBS branch email wq patch =
                        addWork WorkNow buildId wq
                Just repo ->
                     if shouldRebuild (buildRepositoryState $ entityVal repo)
-                    then do runSQL $ DB.update (entityKey repo) [ BuildRepositoryNotifyEmail =. nub (email : buildRepositoryNotifyEmail (entityVal repo))
+                    then do runSQL $ DB.update (entityKey repo) [ BuildRepositoryNotifyEmail =. nub ((userEmail user) : buildRepositoryNotifyEmail (entityVal repo))
                                                                 , BuildRepositoryState =. BuildEnqueued
                                                                 , BuildRepositoryDockerImage =. Nothing
                                                                 ]
                             localLog "Ready to rebuild!"
                             addWork WorkNow (entityKey repo) wq
                     else runSQL $
-                         do DB.update (entityKey repo) [ BuildRepositoryNotifyEmail =. nub (email : buildRepositoryNotifyEmail (entityVal repo)) ]
+                         do DB.update (entityKey repo) [ BuildRepositoryNotifyEmail =. nub (userEmail user : buildRepositoryNotifyEmail (entityVal repo)) ]
                             liftIO $ localLog "Nothing to do"
                             sendNotifications (entityKey repo)

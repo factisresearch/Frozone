@@ -4,9 +4,11 @@ module Frozone.RestApi where
 
 import Frozone.User
 import Frozone.Types
+import Frozone.Util.Rest
 
 import Frozone.Util.Db
 import Frozone.Util.Logging
+import Frozone.Util.Rest
 
 import Web.Spock hiding (patch)
 import Web.Spock.Worker
@@ -19,10 +21,6 @@ import qualified Database.Persist.Sql as DB
 import Database.Persist ((==.), (=.))
 
 import Control.Monad
-
-maybeError :: LogLevel -> String -> T.Text -> Maybe a -> (a -> FrozoneAction ()) -> FrozoneAction ()
-maybeError logLevel logMsg jsonMsg ma =
-    flip (maybe (do { doLog logLevel logMsg; json $ FrozoneError jsonMsg })) ma
 
 
 restApi :: WorkQueue BuildRepositoryId -> FrozoneApp ()
@@ -98,40 +96,3 @@ restApi buildQueue =
             do runSQL $ DB.update collectionId [ PatchCollectionOpen =. False ]
                json FrozoneCmdCollectionClose
 
-withPatch :: T.Text -> T.Text -> (((UserId,User), (PatchId,Patch)) -> FrozoneAction ()) -> ((UserId,User) -> FrozoneAction ())
-withPatch name err f (userId,user) = 
-    do mId <- param name
-       mVal <- maybe (return Nothing) (\iD -> runSQL $ DB.get iD) mId --runSQL $ DB.get iD
-       let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
-       maybe (json $ FrozoneError err ) (\(iD,val) -> f ((userId,user),(iD,val))) mId_Val
-
-withBuild :: T.Text -> T.Text -> (((UserId,User), (BuildRepositoryId,BuildRepository)) -> FrozoneAction ()) -> ((UserId,User) -> FrozoneAction ())
-withBuild name err f (userId,user) = 
-    do mId <- param name
-       mVal <- maybe (return Nothing) (\iD -> runSQL $ DB.get iD) mId --runSQL $ DB.get iD
-       let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
-       maybe (json $ FrozoneError err ) (\(iD,val) -> f ((userId,user),(iD,val))) mId_Val
-
-withPatchCollection :: T.Text -> T.Text -> (((UserId,User), (PatchCollectionId,PatchCollection)) -> FrozoneAction ()) -> ((UserId,User) -> FrozoneAction ())
-withPatchCollection name err f (userId,user) = 
-    do mId <- param name
-       mVal <- maybe (return Nothing) (\iD -> runSQL $ DB.get iD) mId --runSQL $ DB.get iD
-       let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
-       maybe (json $ FrozoneError err ) (\(iD,val) -> f ((userId,user),(iD,val))) mId_Val
-
-userRoute
-    :: StdMethod -> [UserRights] -> T.Text
-    -> ((UserId, User) -> FrozoneAction ()) -> SpockM DB.Connection FrozoneSession FrozoneState ()
-userRoute = Spock.userRoute noAccesHandler (runSQL . userFromSession) checkRights
-    where
-      noAccesHandler reason = 
-        do return () -- <- to do: set state
-           json $ case reason of
-             NotEnoughRights -> FrozoneError "not enough rights"
-             NotLoggedIn -> FrozoneError "not logged in"
-             NotValidUser -> FrozoneError "not valid user"
-
-      checkRights (_, user) necessaryRights =
-        if "admin" `elem` necessaryRights
-        then return $ userIsAdmin user
-        else return $ True

@@ -51,5 +51,5 @@ serverApp :: FrozoneApp ()
 serverApp =
     do middleware (staticPolicy (addBase "static"))
        get "/" indexPage
-       buildQueue <- subcomponent "/bundle" $ bundleApi
+       buildQueue <- subcomponent "/bundle" $ bundleApi -- :: FrozoneApp (WorkingQueue BuildRepositoryId)
        subcomponent "/api" $ restApi buildQueue

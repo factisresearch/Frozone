@@ -41,22 +41,25 @@ User json
 Project json
      name T.Text
      shortName T.Text
+     repoLoc T.Text
      sshKey T.Text
-     users [UserId]
+     users [UserId] --- > [User]
+     UniqueShortName shortName
 
 Session json
-     user UserId
+     user UserId --- > User
      validUntil UTCTime
      UniqueUserId user
 
-BundleData json
+BundleData json -- collection of patches sent
      bundleHash T.Text
      filePath FilePath
      date UTCTime
      UniqueBundleHash bundleHash
 
-PatchCollection json
+PatchCollection json -- group of patches having the same name
      name T.Text
+     project ProjectId --- > Project
      open Bool
 
 Patch json
@@ -64,24 +67,25 @@ Patch json
      name T.Text
      author T.Text
      date UTCTime
-     dependents [PatchId]
-     bundle BundleDataId
-     group PatchCollectionId
+     dependents [PatchId] --- > [Patch]
+     bundle BundleDataId --- > [BundleData]
+     group PatchCollectionId --- > PatchCollection
      UniquePatchVcsId vcsId
 
 BuildLog json
      state BuildState
      time UTCTime
      message T.Text
-     repo BuildRepositoryId
+     repo BuildRepositoryId --- > BuildRepository
 
 BuildRepository json
+     project ProjectId --- > Project
      branch T.Text
      path FilePath
      createdOn UTCTime
      notifyEmail [T.Text]
      changesHash T.Text
-     patch PatchId
+     patch PatchId --- > Patch
      state BuildState
      dockerImage T.Text Maybe
      UniqueRepoPath path
@@ -91,7 +95,7 @@ BundleChange json
      filename FilePath
      oldContents T.Text Maybe
      newContents T.Text Maybe
-     repoId BuildRepositoryId
+     repoId BuildRepositoryId --- > BuildRepository
 |]
 
 updateBuildState :: (PersistMonadBackend m ~ SqlBackend, MonadIO m, PersistQuery m, MonadSqlPersist m)

@@ -37,3 +37,16 @@ userFromSession sessionId =
 sessionDelFromDB :: UserId -> DB.SqlPersistM ()
 sessionDelFromDB userId =
     do DB.deleteWhere [ SessionUser ==. userId ]
+
+repoFromDB :: BuildRepositoryId -> DB.SqlPersistM (Maybe BuildRepository)
+repoFromDB repoId = DB.get repoId
+
+    --do return Nothing --mProjectEntity <- DB.getBy (UniqueUserName
+
+accumParams :: (a -> b) -> (a -> (a,b))
+accumParams f x = (x, f x)
+
+accumParamsM :: Monad m => (a -> m b) -> (a -> m (a,b))
+accumParamsM f x = do
+    y <- f x
+    return (x, y)
