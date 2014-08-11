@@ -73,22 +73,15 @@ bundleApi =
                   return WorkError
        userRoute POST [] "/check" $
          withProjectFromShortName "projShortName" "project not found" $ \(userKV,projKV) ->
-         --withRepo "repoId" "repository not found" $ \(userKV,repoKV) ->
            bundleCheckAction (userKV,projKV) bundleWorker patchWorker
        return patchWorker
 
 bundleCheckAction :: ((UserId,User),(ProjectId,Project)) -> WorkQueue NewBundleArrived -> WorkQueue BuildRepositoryId -> FrozoneAction ()
 bundleCheckAction ((userId,user),(projId,proj)) wq rwq =
-   {-
-       Just repo <- param "target-repo"
-       Just email <- param "email"
-   -}
     do let usersInProject = projectUsers proj :: [UserId]
        if not (userId `elem` usersInProject)
        then restError LogNote "check action not executed. reason: user not part of the project" "user not in project"
        else
-       --let projectKV = runSQL $ buildRepoProject repo --runSQL $ projectFromRepoDB (repoId, repo)
-       --maybeError LogNote "check action not executed. reason: user not part of the project" "user not in project" mProjectKV $
          do allFiles <- files
             case HM.lookup "patch-bundle" allFiles of
               Just patchBundleBS ->
@@ -322,8 +315,6 @@ newBundleArrived (NewBundleArrived (projId,proj) (userId,user) patchBundleBS wq)
 
 prepareForBuild :: VCSApi
                 -> BS.ByteString
-                -- -> String
-                -- -> T.Text
                 -> (UserId,User) -> (ProjectId,Project)
                 -> WorkQueue BuildRepositoryId
                 -> Entity Patch

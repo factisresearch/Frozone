@@ -8,8 +8,27 @@ import Database.Persist.Sql as DB
 import qualified Data.Text as T
 
 import Data.Time
+import Control.Monad
 import Control.Monad.Trans
 import Control.Applicative
+
+
+isFirstUser = liftM (==0) $ userCountFromDB
+
+userCountFromDB :: DB.SqlPersistM Int
+userCountFromDB = return 0
+
+createUser :: T.Text -> T.Text -> Bool -> DB.SqlPersistM ()
+createUser user password isAdmin =
+    do DB.insert_ $ User
+         { userName = user
+         , userPassword = password
+         , userEmail = T.pack ""
+         , userIsAdmin = isAdmin 
+         }
+deleteUser :: T.Text -> DB.SqlPersistM ()
+deleteUser user =
+    do DB.deleteBy (UniqueUserName user)
 
 checkUser :: T.Text -> T.Text -> DB.SqlPersistM (Maybe UserId)
 checkUser name password =

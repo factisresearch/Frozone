@@ -36,7 +36,7 @@ User json
      email T.Text
      isAdmin Bool
      UniqueUserName name
-     UniqueEmail email
+     --UniqueEmail email
 
 Project json
      name T.Text
