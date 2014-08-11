@@ -7,7 +7,7 @@ module Frozone.BundleChecker ( bundleApi ) where
 
 import Frozone.Types
 --import Frozone.Model
-import Frozone.User
+--import Frozone.User
 import Frozone.VCS
 
 import Frozone.Util.Logging
@@ -319,7 +319,7 @@ prepareForBuild :: VCSApi
                 -> WorkQueue BuildRepositoryId
                 -> Entity Patch
                 -> FrozoneQueueWorkerM ()
-prepareForBuild vcs patchBundleBS (userId,user) (projId,proj) wq patch =
+prepareForBuild vcs patchBundleBS (_,user) (projId,proj) wq patch =
     let
       branch = projectRepoLoc proj
     in

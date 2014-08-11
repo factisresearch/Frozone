@@ -23,11 +23,6 @@ import Database.Persist ((==.), (=.))
 import Control.Monad
 
 
-uncurry3 f (a,b,c) = f a b c
-
-answerAndLog logMsg answer =
-    do doLog LogInfo logMsg
-       json $ answer
 
 restApi :: WorkQueue BuildRepositoryId -> FrozoneApp ()
 restApi buildQueue =
@@ -50,8 +45,7 @@ restApi buildQueue =
                               do runSQL $ createUser name password True
                                  answerAndLog ("\"" ++ T.unpack name ++ "\": logged in") FrozoneCmdLogin
                             else
-                              (do doLog LogNote "login failed"
-                                  json $ FrozoneError "login failed")
+                              restError LogNote "login failed" "login failed"
        userRoute GET [] "/logout" $ \(userId, user) ->
          do 
             runSQL $ sessionDelFromDB userId
@@ -87,7 +81,7 @@ restApi buildQueue =
          withPatch "patchId" "Patch not found" $ \((_,user),(patchId,_)) -> 
            do buildList <- runSQL $ DB.selectList [BuildRepositoryPatch ==. patchId] [DB.Desc BuildRepositoryId]
               case buildList of
-                [] -> json (FrozoneError "No builds found belonging to this patch!")
+                [] -> restError LogNote "No builds found belonging to this patch!" "no builds found belonging to this patch"
                 xs -> answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": looking up patch builds") $ FrozoneGetBuilds $ map DB.entityVal xs
        userRoute GET [] "/build/patch/:buildId" $ -- return build info
          withBuild "buildId" "Build not found!" $ \((_,user),(_,build)) ->
@@ -110,13 +104,13 @@ restApi buildQueue =
             do mBuild <- runSQL $ DB.get buildId
                case mBuild of
                  Nothing ->
-                   json (FrozoneError "Build not found!")
+                   restError LogNote "Build not found!" "Build not found"
                  Just build ->
                    if buildRepositoryState build > BuildStarted
                    then do runSQL $ updateBuildState buildId BuildCanceled "Rebuilt scheduled"
                            addWork WorkNow buildId buildQueue
                            answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": retrying build") $ FrozoneCmdBuildRetry
-                   else json (FrozoneError "Already building!")
+                   else restError LogNote "Already building!" "Already building"
        userRoute GET [] "/collection/:collectionId" $ -- return collection
          withPatchCollection "collectionId" "Collection not found!" $ \((_,user),(_,collection)) ->
            answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": looking up collection") $ FrozoneGetCollection collection

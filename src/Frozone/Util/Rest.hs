@@ -18,13 +18,11 @@ import qualified Database.Persist.Sql as DB
 import qualified Data.Text as T
 import Control.Monad
 
-{-
-errorOrFunction :: LogLevel -> String -> T.Text -> Bool -> (a -> FrozoneAction ()) -> FrozoneAction ()
-errorOrFunction logLevel logMsg jsonMsg fireError f =
-    if fireError
-    then restError logLevel logMsg jsonMsg
-    else f
--}
+
+-- |print logMsg to log, send answer to client
+answerAndLog logMsg answer =
+    do doLog LogInfo logMsg
+       json $ answer
 
 {- pseudocode: maybeError logLevel logMsg jsonMsg ma f
 if isJust ma ->
@@ -36,6 +34,11 @@ maybeError :: LogLevel -> String -> T.Text -> Maybe a -> (a -> FrozoneAction ())
 maybeError logLevel logMsg jsonMsg ma =
     flip (maybe (do { doLog logLevel logMsg; json $ FrozoneError jsonMsg })) ma
 
+-- |log error, send error to client
+restError :: LogLevel -> String -> T.Text -> FrozoneAction ()
+restError logLevel logMsg jsonMsg =
+    do doLog logLevel logMsg
+       json $ FrozoneError jsonMsg
 --
 withPatch
     :: T.Text -> T.Text
@@ -92,10 +95,6 @@ withProjectFromShortName shortNameParam err f (userId,user) =
        let mIdAndVal = liftM (\ent -> (DB.entityKey ent, DB.entityVal ent)) mProjEntity
        maybe (json $ FrozoneError err) (\projKV -> f ((userId,user),projKV)) mIdAndVal
 
-restError :: LogLevel -> String -> T.Text -> FrozoneAction ()
-restError logLevel logMsg jsonMsg =
-    do doLog logLevel logMsg
-       json $ FrozoneError jsonMsg
 {-
 with :: T.Text -> T.Text -> (((UserId,User), (key,val)) -> FrozoneAction ()) -> ((UserId,User) -> FrozoneAction ())
 with name err f (userId,user) = 
@@ -121,3 +120,6 @@ userRoute = Spock.userRoute noAccesHandler (runSQL . userFromSession) checkRight
         if "admin" `elem` necessaryRights
         then return $ userIsAdmin user
         else return $ True
+
+uncurry3 f (a,b,c) = f a b c
+
