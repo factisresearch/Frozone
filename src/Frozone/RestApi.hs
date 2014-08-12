@@ -69,6 +69,29 @@ restApi buildQueue =
               do runSQL $ deleteUser userToDelete
                  answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": deleted user \"" ++ T.unpack userToDelete ++ "\"") FrozoneCmdDeleteUser
             --restError LogNote "not yet implemented!" "not yet implemented!"
+       userRoute GET [] "/update/password" $ \(userId, user) ->
+         do mNewPassword <- param "password"
+            maybeError LogNote "expected fields: password" "expected fields: password" mNewPassword $ \newPassword ->
+              do runSQL $ DB.update userId [ UserPassword =. newPassword ]
+                 answerAndLog (T.unpack (userName user) ++ ": updated password")
+                   FrozoneCmdUpdatePassword
+       userRoute GET [] "/update/email" $ \(userId, user) ->
+         do mNewEmail <- param "email"
+            maybeError LogNote "expected fields: email" "expected fields: email" mNewEmail $ \newEmail ->
+              do runSQL $ DB.update userId [ UserEmail =. newEmail ]
+                 answerAndLog (T.unpack (userName user) ++ ": updated email")
+                   FrozoneCmdUpdateEmail
+       userRoute GET ["admin"] "/update/isAdmin" $ \(_, user) ->
+         do mUserToChangeName <- param "user"
+            mIsAdmin <- param "isAdmin" >>= return . (liftM boolFromInt) :: FrozoneAction (Maybe Bool)
+            let mUserAndIsAdmin =
+                  (uncurry $ liftM2 (,)) $ (mUserToChangeName,mIsAdmin) :: Maybe (T.Text,Bool)
+            maybeError LogNote "expected fields: user, isAdmin" "expected fields: user, isAdmin" mUserAndIsAdmin $ \(userToChangeName,newIsAdmin) ->
+              do mUserToChange <- (runSQL $ DB.getBy $ UniqueUserName userToChangeName) >>= return . (liftM tupelFromEntity)
+                 maybeError LogNote "user not found" "user not found" mUserToChange $ \(userToChangeId,_) ->
+                   do runSQL $ DB.update userToChangeId [ UserIsAdmin =. newIsAdmin ]
+                      answerAndLog (T.unpack (userName user) ++ ": " ++ T.unpack userToChangeName ++ "is " ++ if newIsAdmin then "now" else "no longer" ++ " admin")
+                        FrozoneCmdUpdateIsAdmin
        userRoute GET [] "/list-builds" $ \(_, user) ->
          do allBuilds <- runSQL $ DB.selectList [] [DB.Desc BuildRepositoryId, DB.LimitTo 50]
             answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": listing builds") $ FrozoneGetBuilds $ map DB.entityVal allBuilds
@@ -121,6 +144,11 @@ restApi buildQueue =
             do runSQL $ DB.update collectionId [ PatchCollectionOpen =. False ]
                answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": closing collection") $ FrozoneCmdCollectionClose
 
+
+boolFromInt :: Int -> Bool
+boolFromInt i = if i==0 then False else True
+
+tupelFromEntity entity = (DB.entityKey entity, DB.entityVal entity)
 
 login :: (UserId, User) -> FrozoneAction ()
 login (userId,user) =

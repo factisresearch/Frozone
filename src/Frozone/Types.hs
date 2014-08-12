@@ -47,6 +47,9 @@ data FrozoneResponse
     | FrozoneCmdLogout
     | FrozoneCmdCreateUser
     | FrozoneCmdDeleteUser
+    | FrozoneCmdUpdatePassword
+    | FrozoneCmdUpdateEmail
+    | FrozoneCmdUpdateIsAdmin
     | FrozoneGetUsers [User]
     | FrozoneGetBuilds [BuildRepository]
     -- patch
