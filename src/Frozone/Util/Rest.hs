@@ -8,7 +8,8 @@ import Frozone.Types
 import Frozone.Util.Db
 import Frozone.Util.Logging
 
-import Web.Spock hiding (patch)
+import Web.Spock hiding (patch, subcomponent)
+import qualified Web.Spock as S
 import Web.Spock.Auth hiding (userRoute)
 import qualified Web.Spock.Auth as Spock
 
@@ -17,6 +18,7 @@ import qualified Database.Persist.Sql as DB
 
 import qualified Data.Text as T
 import Control.Monad
+import Control.Monad.IO.Class
 
 
 -- |print logMsg to log, send answer to client
@@ -117,10 +119,16 @@ with name err f (userId,user) =
        maybe (json $ FrozoneError err ) (\(iD,val) -> f ((userId,user),(iD,val))) mId_Val
 -}
 
+subcomponent :: MonadIO m => String -> T.Text -> (String -> SpockT m a) -> SpockT m a
+subcomponent prependToRoute route f = S.subcomponent route (f $ prependToRoute ++ T.unpack route)
+
 userRoute
-    :: StdMethod -> [UserRights] -> T.Text
-    -> ((UserId, User) -> FrozoneAction ()) -> SpockM DB.Connection FrozoneSession FrozoneState ()
-userRoute = Spock.userRoute noAccesHandler (runSQL . userFromSession) checkRights
+    :: StdMethod -> [UserRights]
+    -> String -> T.Text
+    -> (String  -> (UserId, User) -> FrozoneAction ())
+    -> SpockM DB.Connection FrozoneSession FrozoneState ()
+userRoute stdMeth userRights routeToPrepend route f =
+  Spock.userRoute noAccesHandler (runSQL . userFromSession) checkRights stdMeth userRights route (f $ routeToPrepend ++ T.unpack route)
     where
       noAccesHandler reason = 
         do return () -- <- to do: set state

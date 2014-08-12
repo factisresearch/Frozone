@@ -52,8 +52,8 @@ data NewBundleArrived
    , _nba_patchQueue :: WorkQueue BuildRepositoryId
    }
 
-bundleApi :: FrozoneApp (WorkQueue BuildRepositoryId)
-bundleApi =
+bundleApi :: String -> FrozoneApp (WorkQueue BuildRepositoryId)
+bundleApi currentRoute =
     do runSQL closeDangelingActions
        st <- getState
        let concurrentBuilds = fc_concurrentBuilds $ fs_config st
@@ -71,7 +71,7 @@ bundleApi =
                          do updateBuildState buildRepoId BuildFailed (T.pack errorMsg)
                             sendNotifications buildRepoId
                   return WorkError
-       userRoute POST [] "/check" $
+       userRoute POST [] currentRoute "/check" $ \_ ->
          withProjectFromShortName "projShortName" "project not found" $ \(userKV,projKV) ->
            bundleCheckAction (userKV,projKV) bundleWorker patchWorker
        return patchWorker

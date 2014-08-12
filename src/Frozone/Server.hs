@@ -11,12 +11,14 @@ import Frozone.WebFrontend
 import Frozone.VCS
 import Frozone.Util.Logging
 
+import Frozone.Util.Rest
+
 import Cook.Clean
 
 import Control.Monad.Logger
 import Database.Persist.Sqlite (createSqlitePool, runSqlPool, runMigration)
 import Network.Wai.Middleware.Static
-import Web.Spock
+import Web.Spock hiding( subcomponent )
 import Web.Spock.Auth
 import Control.Monad.Trans.Resource
 import qualified Data.Text as T
@@ -51,5 +53,5 @@ serverApp :: FrozoneApp ()
 serverApp =
     do middleware (staticPolicy (addBase "static"))
        get "/" indexPage
-       buildQueue <- subcomponent "/bundle" $ bundleApi -- :: FrozoneApp (WorkingQueue BuildRepositoryId)
-       subcomponent "/api" $ restApi buildQueue
+       buildQueue <- subcomponent "" "/bundle" $ bundleApi -- :: FrozoneApp (WorkingQueue BuildRepositoryId)
+       subcomponent "" "/api" $ (flip restApi) buildQueue
