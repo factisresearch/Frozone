@@ -18,8 +18,6 @@ import qualified Database.Persist.Sql as DB
 import qualified Data.Text as T
 import Control.Monad
 
-import qualified Data.List as L
-
 
 -- |print logMsg to log, send answer to client
 answerAndLog mUser logMsg answer =

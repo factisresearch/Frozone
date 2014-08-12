@@ -52,7 +52,8 @@ restApi buildQueue =
 -- user management:
        userRoute GET ["admin"] "/users/list-users" $ \(_, user) ->
          do allUsers <- runSQL $ DB.selectList [] [DB.Desc UserId, DB.LimitTo 50]
-            answerAndLog (Just $ userName user) "listing users" $ FrozoneGetUsers $ map DB.entityVal allUsers
+            answerAndLog (Just $ userName user) "listing users" $
+              FrozoneGetUsers $ map ( safeUserInfoFromUser . DB.entityVal) allUsers
        userRoute POST ["admin"] "/users/create" $ \(_, user) ->
          do mNewUser <- param "name"
             mNewPassword <- param "password"
@@ -158,6 +159,13 @@ restApi buildQueue =
                answerAndLog (Just $ userName user) "closing collection" $
                  FrozoneCmdCollectionClose
 
+
+safeUserInfoFromUser :: User -> SafeUserInfo
+safeUserInfoFromUser user = SafeUserInfo
+    { suiName = userName user
+    , suiEmail = userEmail user
+    , suiIsAdmin = userIsAdmin user
+    }
 
 boolFromInt :: Int -> Bool
 boolFromInt i = if i==0 then False else True
