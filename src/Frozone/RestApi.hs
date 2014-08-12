@@ -94,12 +94,12 @@ restApi currentRoute buildQueue =
                         FrozoneCmdUpdateIsAdmin
        subcomponent currentRoute "/project" $ projectApi 
 -- patches:
-       userRoute GET [] currentRoute "/patch/:patchId" $ \_ -> -- return patch info
-         withPatch "patchId" "Patch not found!" $ \((_,user),(_,patch)) -> 
+       userRoute GET [] currentRoute "/patch/:patchId" $ \route -> -- return patch info
+         withPatch "patchId" route $ \(_,user) (_,patch) -> 
             answerAndLog (Just $ userName user) "looking up patch info" $
               FrozoneGetPatch patch
        userRoute GET [] currentRoute "/build/patch/:patchId" $ \route -> -- return patch builds
-         withPatch "patchId" "Patch not found" $ \((_,user),(patchId,_)) -> 
+         withPatch "patchId" route $ \(_,user) (patchId,_) -> 
            do buildList <- runSQL $ DB.selectList [BuildRepositoryPatch ==. patchId] [DB.Desc BuildRepositoryId]
               case buildList of
                 [] -> errorInRoute LogNote (Just $ userName user) route "No builds found belonging to this patch!" "no builds found belonging to this patch"
@@ -112,28 +112,28 @@ restApi currentRoute buildQueue =
             answerAndLog (Just $ userName user) "listing builds" $
               FrozoneGetBuilds $ map DB.entityVal allBuilds
 -- build repositories:
-       userRoute GET [] currentRoute "/build/patch/:buildId" $ \_ -> -- return build info
-         withBuild "buildId" "Build not found!" $ \((_,user),(_,build)) ->
+       userRoute GET [] currentRoute "/build/patch/:buildId" $ \route -> -- return build info
+         withBuild "buildId" route $ \(_,user) (_,build) ->
            answerAndLog (Just $ userName user) "looking up build info" $
              FrozoneGetBuild build
-       userRoute GET [] currentRoute "/build/:buildId/logs" $ \_ -> -- return build logs
-         withBuild "buildId" "Build not found!" $ \((_,user),(buildId,_)) ->
+       userRoute GET [] currentRoute "/build/:buildId/logs" $ \route -> -- return build logs
+         withBuild "buildId" route $ \(_,user) (buildId,_) ->
             do fullLogs <- runSQL $ DB.selectList [BuildLogRepo ==. buildId] [DB.Desc BuildLogTime, DB.LimitTo 50]
                answerAndLog (Just $ userName user) "looking up build info" $
                  FrozoneGetBuildLogs $ map DB.entityVal fullLogs
-       userRoute GET [] currentRoute "/build/:buildId/file-changes" $ \_ -> -- return build file-changes
-         withBuild "buildId" "Build not found!" $ \((_,user),(buildId,_)) ->
+       userRoute GET [] currentRoute "/build/:buildId/file-changes" $ \route -> -- return build file-changes
+         withBuild "buildId" route $ \(_,user) (buildId,_) ->
             do allChanges <- runSQL $ DB.selectList [BundleChangeRepoId ==. buildId] []
                answerAndLog (Just $ userName user) "looking up build file changes" $
                  FrozoneGetBuildFileChanges $ map DB.entityVal allChanges
-       userRoute GET [] currentRoute "/build/:buildId/cancel" $ \_ -> -- command: cancel build
-         withBuild "buildId" "Build not found!" $ \((_,user),(buildId,_)) ->
+       userRoute GET [] currentRoute "/build/:buildId/cancel" $ \route -> -- command: cancel build
+         withBuild "buildId" route $ \(_,user) (buildId,_) ->
            do runSQL $ updateBuildState buildId BuildCanceled  "Aborted by user"
               -- todo: kill docker build if running
               answerAndLog (Just $ userName user) "canceling build" $
                 FrozoneCmdBuildCancel
        userRoute GET [] currentRoute "/build/:buildId/rebuild" $ \route -> -- command: retry build
-         withBuild "buildId" "Build not found!" $ \((_,user),(buildId,_)) ->
+         withBuild "buildId" route $ \(_,user) (buildId,_) ->
             do mBuild <- runSQL $ DB.get buildId
                case mBuild of
                  Nothing ->
@@ -146,24 +146,26 @@ restApi currentRoute buildQueue =
                              FrozoneCmdBuildRetry
                    else errorInRoute LogNote (Just $ userName user) route "Already building" "Already building"
 -- patch collection
-       userRoute GET [] currentRoute "/collection/:collectionId" $ \_ -> -- return collection
-         withPatchCollection "collectionId" "Collection not found!" $ \((_,user),(_,collection)) ->
+       userRoute GET [] currentRoute "/collection/:collectionId" $ \route -> -- return collection
+         withPatchCollection "collectionId" route $ \(_,user) (_,collection) ->
            answerAndLog (Just $ userName user) "looking up collection" $
              FrozoneGetCollection collection
-       userRoute GET [] currentRoute "/collection/:collectionId/patches" $ \_ -> -- return collection patches
-         withPatchCollection "collectionId" "Collection not found!" $ \((_,user),(collectionId,_)) ->
+       userRoute GET [] currentRoute "/collection/:collectionId/patches" $ \route -> -- return collection patches
+         withPatchCollection "collectionId" route $ \(_,user) (collectionId,_) ->
             do patchList <- runSQL $ DB.selectList [PatchGroup ==. collectionId] [DB.Desc PatchId, DB.LimitTo 50]
                answerAndLog (Just $ userName user) "looking up collection patches" $
                  FrozoneGetCollectionPatches $ map DB.entityVal patchList
-       userRoute GET [] currentRoute "/collection/:collectionId/close" $ \_ -> -- command: collection close
-         withPatchCollection "collectionId" "Collection not found!" $ \((_,user),(collectionId,_)) -> 
+       userRoute GET [] currentRoute "/collection/:collectionId/close" $ \route -> -- command: collection close
+         withPatchCollection "collectionId" route $ \(_,user) (collectionId,_) -> 
             do runSQL $ DB.update collectionId [ PatchCollectionOpen =. False ]
                answerAndLog (Just $ userName user) "closing collection" $
                  FrozoneCmdCollectionClose
 
-projectApi currentRoute = return ()
-{-
-    do userRoute GET ["admin"] currentRoute "/create" $ \route (userId,user) ->
+projectApi currentRoute = 
+    do userRoute GET ["admin"] currentRoute "/list-projects" $ \route ->
+         withProjectFromShortName "projShortName" route $ \(userId,user) (projectId,project) ->
+           return ()
+       userRoute GET ["admin"] currentRoute "/create" $ \route (userId,user) ->
          do return ()
        userRoute GET ["admin"] currentRoute "/delete" $ \route (userId,user) ->
          do return ()
@@ -174,7 +176,6 @@ projectApi currentRoute = return ()
               do return ()
             userRoute GET ["admin"] currentRoute "/users" $ \route (userId,user) ->
               do return ()
--}
 
 safeUserInfoFromUser :: User -> SafeUserInfo
 safeUserInfoFromUser user = SafeUserInfo

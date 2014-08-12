@@ -72,7 +72,7 @@ bundleApi currentRoute =
                             sendNotifications buildRepoId
                   return WorkError
        userRoute POST [] currentRoute "/check" $ \_ ->
-         withProjectFromShortName "projShortName" "project not found" $ \(userKV,projKV) ->
+         withProjectFromShortName "projShortName" "project not found" $ \userKV projKV ->
            bundleCheckAction (userKV,projKV) bundleWorker patchWorker
        return patchWorker
 

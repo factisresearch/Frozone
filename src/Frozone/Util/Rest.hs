@@ -54,18 +54,34 @@ restErrorPriv :: LogLevel -> String -> T.Text -> FrozoneAction ()
 restErrorPriv logLevel logMsg jsonMsg =
     do doLog logLevel logMsg
        json $ FrozoneError jsonMsg
+
+
+
 --
 withPatch
-    :: T.Text -> T.Text
-    -> (((UserId,User), (PatchId,Patch)) -> FrozoneAction ())
+    :: T.Text -> String
+    -> ((UserId,User) -> (PatchId,Patch) -> FrozoneAction ())
     -> (UserId,User) -> FrozoneAction ()
 --withPath = with
-withPatch name err f (userId,user) = 
+withPatch name route f (userId,user) = 
     do mId <- param name
-       mVal <- maybe (return Nothing) (\iD -> runSQL $ DB.get iD) mId 
-       let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
-       maybe (json $ FrozoneError err ) (\(iD,val) -> f ((userId,user),(iD,val))) mId_Val
+       maybeRestAPIError mId (Just $ userName user) route [T.unpack name] $ \iD ->
+         do mVal <- runSQL $ DB.get iD
+            maybeErrorInRoute mVal LogNote (Just $ userName user) route "patch not found" "patch not found" $ \val ->
+              f (userId,user) (iD,val)
 
+withBuild
+    :: T.Text -> String
+    -> ((UserId,User) -> (BuildRepositoryId,BuildRepository) -> FrozoneAction ())
+    -> (UserId,User) -> FrozoneAction ()
+--withPath = with
+withBuild name route f (userId,user) = 
+    do mId <- param name
+       maybeRestAPIError mId (Just $ userName user) route [T.unpack name] $ \iD ->
+         do mVal <- runSQL $ DB.get iD
+            maybeErrorInRoute mVal LogNote (Just $ userName user) route "build not found" "build not found" $ \val ->
+              f (userId,user) (iD,val)
+{-
 withBuild
     :: T.Text -> T.Text
     -> (((UserId,User), (BuildRepositoryId,BuildRepository)) -> FrozoneAction ())
@@ -76,39 +92,49 @@ withBuild name err f (userId,user) =
        mVal <- maybe (return Nothing) (\iD -> runSQL $ DB.get iD) mId 
        let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
        maybe (json $ FrozoneError err ) (\(iD,val) -> f ((userId,user),(iD,val))) mId_Val
+-}
 
 withPatchCollection 
-    :: T.Text -> T.Text
-    -> (((UserId,User), (PatchCollectionId,PatchCollection)) -> FrozoneAction ())
+    :: T.Text -> String
+    -> ((UserId,User) -> (PatchCollectionId,PatchCollection) -> FrozoneAction ())
     -> (UserId,User) -> FrozoneAction ()
 --withPatchCollection = with
-withPatchCollection name err f (userId,user) =
+withPatchCollection name route f (userId,user) =
     do mId <- param name
-       mVal <- maybe (return Nothing) (\iD -> runSQL $ DB.get iD) mId 
-       let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
-       maybe (json $ FrozoneError err ) (\(iD,val) -> f ((userId,user),(iD,val))) mId_Val
-
+       maybeRestAPIError mId (Just $ userName user) route [T.unpack name] $ \iD ->
+         do mVal <- runSQL $ DB.get iD
+            maybeErrorInRoute mVal LogNote (Just $ userName user) route "patch collection not found" "patch collection not found" $ \val ->
+              f (userId,user) (iD,val)
+    
 withRepo 
-    :: T.Text -> T.Text
-    -> (((UserId,User), (BuildRepositoryId,BuildRepository)) -> FrozoneAction ())
+    :: T.Text -> String
+    -> ((UserId,User) -> (BuildRepositoryId,BuildRepository) -> FrozoneAction ())
     -> (UserId,User) -> FrozoneAction ()
 --withRepoCollection = with
-withRepo name err f (userId,user) =
+withRepo name route f (userId,user) =
     do mId <- param name
-       mVal <- maybe (return Nothing) (\iD -> runSQL $ DB.get iD) mId 
-       let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
-       maybe (json $ FrozoneError err ) (\(iD,val) -> f ((userId,user),(iD,val))) mId_Val
+       maybeRestAPIError mId (Just $ userName user) route [T.unpack name] $ \iD ->
+         do mVal <- runSQL $ DB.get iD
+            maybeErrorInRoute mVal LogNote (Just $ userName user) route "repo not found" "repo not found" $ \val ->
+              f (userId,user) (iD,val)
+         --let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
+       --maybe (json $ FrozoneError err ) (\(iD,val) -> f ((userId,user),(iD,val))) mId_Val
 
 withProjectFromShortName
-    :: T.Text -> T.Text
-    -> (((UserId,User), (ProjectId,Project)) -> FrozoneAction ())
+    :: T.Text -> String
+    -> ((UserId,User) -> (ProjectId,Project) -> FrozoneAction ())
     -> (UserId,User) -> FrozoneAction ()
 --withBuild = with
-withProjectFromShortName shortNameParam err f (userId,user) =
+withProjectFromShortName shortNameParam route f (userId,user) =
     do mShortName <- param shortNameParam
-       mProjEntity <- maybe (return Nothing) (\shortName -> runSQL $ DB.getBy (UniqueShortName shortName)) mShortName 
-       let mIdAndVal = liftM (\ent -> (DB.entityKey ent, DB.entityVal ent)) mProjEntity
+       maybeRestAPIError mShortName (Just $ userName user) route [T.unpack shortNameParam] $ \shortName ->
+         do mProjEntity <- runSQL $ DB.getBy (UniqueShortName shortName)
+            let mIdAndVal = liftM (\ent -> (DB.entityKey ent, DB.entityVal ent)) mProjEntity
+            maybeErrorInRoute mIdAndVal LogNote (Just $ userName user) route "project not found" "project not found" $ \projKV ->
+              f (userId,user) projKV
+       {-
        maybe (json $ FrozoneError err) (\projKV -> f ((userId,user),projKV)) mIdAndVal
+       -}
 
 {-
 with :: T.Text -> T.Text -> (((UserId,User), (key,val)) -> FrozoneAction ()) -> ((UserId,User) -> FrozoneAction ())
