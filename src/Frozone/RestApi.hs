@@ -32,7 +32,6 @@ restApi buildQueue =
             mPassword <- param "password" :: FrozoneAction (Maybe T.Text)
             let mNameAndPassword = (uncurry $ liftM2 (,)) (mName,mPassword) :: Maybe (T.Text,T.Text)
             maybeRestAPIError mNameAndPassword Nothing "/login" ["param","password"] $ \(name,password) ->
-            --maybeError LogNote "rest api violation in rest route \"/login\"" "expecting fields name, password" mNameAndPassword $ \(name,password) ->
               do mUserKV <- runSQL $ checkUser name password
                  case mUserKV of
                    Just userKV -> login userKV
@@ -45,7 +44,6 @@ restApi buildQueue =
                                    login userKV
                             else
                               errorInRoute LogWarn (Just name) "/login" "login failed" "login failed"
-                              --restError LogWarn ("login as user \"" ++ T.unpack name ++ "\" failed!") "login failed"
        userRoute GET [] "/logout" $ \(userId, user) ->
          do 
             runSQL $ sessionDelFromDB userId
@@ -62,11 +60,8 @@ restApi buildQueue =
             let mNewIsAdmin = mNewIsAdmin' >>= (\p -> return $ if p==0 then False else True)
             let mUserAndPasswordAndIsAdmin = (uncurry3 $ liftM3 (,,)) $ (mNewUser, mNewPassword, mNewIsAdmin) :: Maybe (T.Text, T.Text, Bool)
             maybeRestAPIError mUserAndPasswordAndIsAdmin (Just $ userName user) "/users/create" ["name","password","isAdmin"] $ \(newUser,newPassword,newIsAdmin) ->
-            --maybeError LogNote (T.unpack (userName user) ++ ": rest api violation in rest route \"/users/create\"")
-              --"expected fields: name, password, isAdmin" mUserAndPasswordAndIsAdmin $ \(newUser,newPassword,newIsAdmin) ->
               do runSQL $ createUser newUser newPassword newIsAdmin
                  answerAndLog (Just $ userName user) ("created user \"" ++ T.unpack newUser ++ "\"") FrozoneCmdCreateUser
-------
        userRoute GET ["admin"] "/users/delete" $ \(_, user) ->
          do mUserToDelete <- param "name"
             maybeRestAPIError mUserToDelete (Just $ userName user) "/users/delete" ["name"] $ \(userToDelete) ->

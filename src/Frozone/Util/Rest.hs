@@ -48,18 +48,6 @@ errorInRoute logLevel mUser route logMsg jsonMsg =
 maybeError :: Maybe a -> FrozoneAction () -> (a -> FrozoneAction ()) -> FrozoneAction ()
 maybeError ma printMsg =
     flip (maybe printMsg) ma
-    --flip (maybe (do { doLog logLevel logMsg; json $ FrozoneError jsonMsg })) ma
-{-
-{- pseudocode: maybeError logLevel logMsg jsonMsg ma f
-if isJust ma ->
-    execute f
-else
-    write logMsg to log, send jsonMsg to client
--}
-maybeError :: LogLevel -> String -> T.Text -> Maybe a -> (a -> FrozoneAction ()) -> FrozoneAction ()
-maybeError logLevel logMsg jsonMsg ma =
-    flip (maybe (do { doLog logLevel logMsg; json $ FrozoneError jsonMsg })) ma
--}
 
 -- |log error, send error to client
 restErrorPriv :: LogLevel -> String -> T.Text -> FrozoneAction ()
