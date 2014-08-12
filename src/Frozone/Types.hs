@@ -45,16 +45,18 @@ type FrozoneMessage = Either FrozoneError FrozoneResponse
 data FrozoneResponse
     = FrozoneCmdLogin
     | FrozoneCmdLogout
+    -- user management
+    | FrozoneGetUsers [User]
     | FrozoneCmdCreateUser
     | FrozoneCmdDeleteUser
     | FrozoneCmdUpdatePassword
     | FrozoneCmdUpdateEmail
     | FrozoneCmdUpdateIsAdmin
-    | FrozoneGetUsers [User]
-    | FrozoneGetBuilds [BuildRepository]
     -- patch
     | FrozoneGetPatch Patch
     | FrozoneGetPatchBuilds [BuildRepository]
+    -- general information
+    | FrozoneGetBuilds [BuildRepository]
     -- build repository
     | FrozoneGetBuild BuildRepository
     | FrozoneGetBuildLogs [BuildLog]

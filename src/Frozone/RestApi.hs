@@ -49,10 +49,11 @@ restApi buildQueue =
             runSQL $ sessionDelFromDB userId
             markAsGuest
             answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": logged out") $ FrozoneCmdLogout
-       userRoute GET ["admin"] "/list-users" $ \(_, user) ->
+-- user management:
+       userRoute GET ["admin"] "/users/list-users" $ \(_, user) ->
          do allUsers <- runSQL $ DB.selectList [] [DB.Desc UserId, DB.LimitTo 50]
             answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": listing users") $ FrozoneGetUsers $ map DB.entityVal allUsers
-       userRoute POST ["admin"] "/create" $ \(_, user) ->
+       userRoute POST ["admin"] "/users/create" $ \(_, user) ->
          do mNewUser <- param "name"
             mNewPassword <- param "password"
             mNewIsAdmin' <- param "isAdmin" :: FrozoneAction (Maybe Int)
@@ -62,26 +63,26 @@ restApi buildQueue =
               "expected fields: name, password, isAdmin" mUserAndPasswordAndIsAdmin $ \(newUser,newPassword,newIsAdmin) ->
               do runSQL $ createUser newUser newPassword newIsAdmin
                  answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": created user \"" ++ T.unpack newUser ++ "\"") FrozoneCmdCreateUser
-       userRoute GET ["admin"] "/delete" $ \(_, user) ->
+       userRoute GET ["admin"] "/users/delete" $ \(_, user) ->
          do mUserToDelete <- param "name"
             maybeError LogNote "expected fields: name"
               "expected fields: name" mUserToDelete $ \(userToDelete) ->
               do runSQL $ deleteUser userToDelete
                  answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": deleted user \"" ++ T.unpack userToDelete ++ "\"") FrozoneCmdDeleteUser
             --restError LogNote "not yet implemented!" "not yet implemented!"
-       userRoute GET [] "/update/password" $ \(userId, user) ->
+       userRoute GET [] "/users/update/password" $ \(userId, user) ->
          do mNewPassword <- param "password"
             maybeError LogNote "expected fields: password" "expected fields: password" mNewPassword $ \newPassword ->
               do runSQL $ DB.update userId [ UserPassword =. newPassword ]
                  answerAndLog (T.unpack (userName user) ++ ": updated password")
                    FrozoneCmdUpdatePassword
-       userRoute GET [] "/update/email" $ \(userId, user) ->
+       userRoute GET [] "/users/update/email" $ \(userId, user) ->
          do mNewEmail <- param "email"
             maybeError LogNote "expected fields: email" "expected fields: email" mNewEmail $ \newEmail ->
               do runSQL $ DB.update userId [ UserEmail =. newEmail ]
                  answerAndLog (T.unpack (userName user) ++ ": updated email")
                    FrozoneCmdUpdateEmail
-       userRoute GET ["admin"] "/update/isAdmin" $ \(_, user) ->
+       userRoute GET ["admin"] "/users/update/isAdmin" $ \(_, user) ->
          do mUserToChangeName <- param "user"
             mIsAdmin <- param "isAdmin" >>= return . (liftM boolFromInt) :: FrozoneAction (Maybe Bool)
             let mUserAndIsAdmin =
@@ -92,9 +93,7 @@ restApi buildQueue =
                    do runSQL $ DB.update userToChangeId [ UserIsAdmin =. newIsAdmin ]
                       answerAndLog (T.unpack (userName user) ++ ": " ++ T.unpack userToChangeName ++ "is " ++ if newIsAdmin then "now" else "no longer" ++ " admin")
                         FrozoneCmdUpdateIsAdmin
-       userRoute GET [] "/list-builds" $ \(_, user) ->
-         do allBuilds <- runSQL $ DB.selectList [] [DB.Desc BuildRepositoryId, DB.LimitTo 50]
-            answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": listing builds") $ FrozoneGetBuilds $ map DB.entityVal allBuilds
+-- patches:
        userRoute GET [] "/patch/:patchId" $ -- return patch info
          withPatch "patchId" "Patch not found!" $ \((_,user),(_,patch)) -> 
             answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": looking up patch info") $ FrozoneGetPatch patch
@@ -104,6 +103,11 @@ restApi buildQueue =
               case buildList of
                 [] -> restError LogNote "No builds found belonging to this patch!" "no builds found belonging to this patch"
                 xs -> answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": looking up patch builds") $ FrozoneGetBuilds $ map DB.entityVal xs
+-- general information:
+       userRoute GET [] "/build/list-builds" $ \(_, user) ->
+         do allBuilds <- runSQL $ DB.selectList [] [DB.Desc BuildRepositoryId, DB.LimitTo 50]
+            answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": listing builds") $ FrozoneGetBuilds $ map DB.entityVal allBuilds
+-- build repositories:
        userRoute GET [] "/build/patch/:buildId" $ -- return build info
          withBuild "buildId" "Build not found!" $ \((_,user),(_,build)) ->
            answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": looking up build info") $ FrozoneGetBuild build
@@ -132,6 +136,7 @@ restApi buildQueue =
                            addWork WorkNow buildId buildQueue
                            answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": retrying build") $ FrozoneCmdBuildRetry
                    else restError LogNote "Already building!" "Already building"
+-- patch collection
        userRoute GET [] "/collection/:collectionId" $ -- return collection
          withPatchCollection "collectionId" "Collection not found!" $ \((_,user),(_,collection)) ->
            answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": looking up collection") $ FrozoneGetCollection collection
