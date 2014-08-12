@@ -4,7 +4,7 @@ module Frozone.RestApi where
 
 import Frozone.User
 import Frozone.Types
-import Frozone.Util.Rest
+--import Frozone.Util.Rest
 
 import Frozone.Util.Db
 import Frozone.Util.Logging
@@ -13,14 +13,15 @@ import Frozone.Util.Rest
 import Web.Spock hiding (patch)
 import Web.Spock.Worker
 import Web.Spock.Auth hiding (userRoute)
-import qualified Web.Spock.Auth as Spock
+--import qualified Web.Spock.Auth as Spock
 import qualified Data.Text as T
 
 import qualified Database.Persist as DB
-import qualified Database.Persist.Sql as DB
+--import qualified Database.Persist.Sql as DB
 import Database.Persist ((==.), (=.))
 
 import Control.Monad
+
 
 
 
@@ -31,19 +32,16 @@ restApi buildQueue =
             mPassword <- param "password" :: FrozoneAction (Maybe T.Text)
             let mNameAndPassword = (uncurry $ liftM2 (,)) (mName,mPassword) :: Maybe (T.Text,T.Text)
             maybeError LogNote "expecting fields name, password" "expecting fields name, password" mNameAndPassword $ \(name,password) ->
-              do mUserId <- runSQL $ checkUser name password
-                 case mUserId of
-                   Just userId ->
-                     do sessionId <- runSQL $ sessionIntoDB userId
-                        markAsLoggedIn sessionId
-                        answerAndLog ("\"" ++ T.unpack name ++ "\": logged in")
-                          FrozoneCmdLogin
+              do mUserKV <- runSQL $ checkUser name password
+                 case mUserKV of
+                   Just userKV -> login userKV
                    Nothing ->
                      do firstUser <- runSQL isFirstUser
                         if firstUser
                             then
-                              do runSQL $ createUser name password True
-                                 answerAndLog ("\"" ++ T.unpack name ++ "\": logged in") FrozoneCmdLogin
+                              do mNewUserKV <- runSQL $ createUser name password True
+                                 maybeError LogError "failed to create user" "failed to create user" mNewUserKV $ \userKV ->
+                                   login userKV
                             else
                               restError LogNote "login failed" "login failed"
        userRoute GET [] "/logout" $ \(userId, user) ->
@@ -64,7 +62,7 @@ restApi buildQueue =
               "expected fields: name, password, isAdmin" mUserAndPasswordAndIsAdmin $ \(newUser,newPassword,newIsAdmin) ->
               do runSQL $ createUser newUser newPassword newIsAdmin
                  answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": created user \"" ++ T.unpack newUser ++ "\"") FrozoneCmdCreateUser
-       userRoute POST ["admin"] "/delete" $ \(_, user) ->
+       userRoute GET ["admin"] "/delete" $ \(_, user) ->
          do mUserToDelete <- param "name"
             maybeError LogNote "expected fields: name"
               "expected fields: name" mUserToDelete $ \(userToDelete) ->
@@ -123,3 +121,10 @@ restApi buildQueue =
             do runSQL $ DB.update collectionId [ PatchCollectionOpen =. False ]
                answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": closing collection") $ FrozoneCmdCollectionClose
 
+
+login :: (UserId, User) -> FrozoneAction ()
+login (userId,user) =
+    do sessionId <- runSQL $ sessionIntoDB userId
+       markAsLoggedIn sessionId
+       answerAndLog ("\"" ++ T.unpack (userName user) ++ "\": logged in")
+         FrozoneCmdLogin

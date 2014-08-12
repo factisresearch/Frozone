@@ -13,31 +13,33 @@ import Control.Monad.Trans
 import Control.Applicative
 
 
-isFirstUser = liftM (==0) $ userCountFromDB
+isFirstUser = liftM ((==0) . length) $
+    (DB.selectList [] [DB.LimitTo 1] :: DB.SqlPersistM [DB.Entity User])
 
-userCountFromDB :: DB.SqlPersistM Int
-userCountFromDB = return 0
 
-createUser :: T.Text -> T.Text -> Bool -> DB.SqlPersistM ()
+createUser :: T.Text -> T.Text -> Bool -> DB.SqlPersistM (Maybe (UserId,User))
 createUser user password isAdmin =
-    do DB.insert_ $ User
+    do key <- DB.insert $ User
          { userName = user
          , userPassword = password
          , userEmail = T.pack ""
          , userIsAdmin = isAdmin 
          }
+       mVal <- DB.get key
+       return $ uncurry (liftM2 (,)) $ (Just key, mVal)
+
 deleteUser :: T.Text -> DB.SqlPersistM ()
 deleteUser user =
     do DB.deleteBy (UniqueUserName user)
 
-checkUser :: T.Text -> T.Text -> DB.SqlPersistM (Maybe UserId)
+checkUser :: T.Text -> T.Text -> DB.SqlPersistM (Maybe (UserId,User))
 checkUser name password =
     do mUserEntity <- DB.getBy (UniqueUserName name)
        case mUserEntity of
          Just userEntity -> 
-           let user = DB.entityVal userEntity in
+           let (userId,user) = (DB.entityKey userEntity, DB.entityVal userEntity) in
            if userPassword user == password
-           then return $ Just (DB.entityKey userEntity)
+           then return $ Just (userId,user)
            else return Nothing
          Nothing -> return Nothing
 
