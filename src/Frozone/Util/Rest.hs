@@ -18,12 +18,38 @@ import qualified Database.Persist.Sql as DB
 import qualified Data.Text as T
 import Control.Monad
 
+import qualified Data.List as L
+
 
 -- |print logMsg to log, send answer to client
-answerAndLog logMsg answer =
-    do doLog LogInfo logMsg
+answerAndLog mUser logMsg answer =
+    do doLog LogInfo $
+         maybe "" (\user -> T.unpack user ++ ": ") mUser
+         ++ logMsg
        json $ answer
 
+maybeRestAPIError ma mUser route fields =
+    maybeError ma (restAPIError mUser route fields)
+maybeErrorInRoute ma logLevel mUser route logMsg jsonMsg =
+    maybeError ma $ errorInRoute logLevel mUser route logMsg jsonMsg
+
+restAPIError :: Maybe T.Text -> String -> [String] -> FrozoneAction ()
+restAPIError mUser route fields =
+  restErrorPriv LogNote
+    (maybe "" (\user -> T.unpack user ++ ": ") mUser ++ "rest api violation in rest route \"" ++ route ++ "\"")
+    ("expected fields: " `T.append` (T.intercalate ", " $ map T.pack fields))
+
+errorInRoute :: LogLevel -> Maybe T.Text -> String -> String -> T.Text -> FrozoneAction ()
+errorInRoute logLevel mUser route logMsg jsonMsg =
+  restErrorPriv logLevel
+    (maybe "" (\user -> T.unpack user ++ ": ") mUser ++ "error in route \"" ++ route ++ "\": " ++ logMsg)
+    jsonMsg
+
+maybeError :: Maybe a -> FrozoneAction () -> (a -> FrozoneAction ()) -> FrozoneAction ()
+maybeError ma printMsg =
+    flip (maybe printMsg) ma
+    --flip (maybe (do { doLog logLevel logMsg; json $ FrozoneError jsonMsg })) ma
+{-
 {- pseudocode: maybeError logLevel logMsg jsonMsg ma f
 if isJust ma ->
     execute f
@@ -33,10 +59,11 @@ else
 maybeError :: LogLevel -> String -> T.Text -> Maybe a -> (a -> FrozoneAction ()) -> FrozoneAction ()
 maybeError logLevel logMsg jsonMsg ma =
     flip (maybe (do { doLog logLevel logMsg; json $ FrozoneError jsonMsg })) ma
+-}
 
 -- |log error, send error to client
-restError :: LogLevel -> String -> T.Text -> FrozoneAction ()
-restError logLevel logMsg jsonMsg =
+restErrorPriv :: LogLevel -> String -> T.Text -> FrozoneAction ()
+restErrorPriv logLevel logMsg jsonMsg =
     do doLog logLevel logMsg
        json $ FrozoneError jsonMsg
 --
@@ -122,4 +149,3 @@ userRoute = Spock.userRoute noAccesHandler (runSQL . userFromSession) checkRight
         else return $ True
 
 uncurry3 f (a,b,c) = f a b c
-

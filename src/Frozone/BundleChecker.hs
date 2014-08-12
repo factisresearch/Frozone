@@ -80,7 +80,7 @@ bundleCheckAction :: ((UserId,User),(ProjectId,Project)) -> WorkQueue NewBundleA
 bundleCheckAction ((userId,user),(projId,proj)) wq rwq =
     do let usersInProject = projectUsers proj :: [UserId]
        if not (userId `elem` usersInProject)
-       then restError LogNote "check action not executed. reason: user not part of the project" "user not in project"
+       then errorInRoute LogNote (Just $ userName user) "/check" "check action not executed. reason: user not part of the project" "user not in project"
        else
          do allFiles <- files
             case HM.lookup "patch-bundle" allFiles of
