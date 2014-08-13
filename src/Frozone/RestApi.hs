@@ -166,7 +166,7 @@ restApi currentRoute buildQueue =
 
 projectApi currentRoute = 
     do userRoute GET ["admin"] currentRoute "/list-projects" $ \route (_,user) ->
-         do mAllProjects <- (runSQL projectList) >>= (mapM $ (projectInfoFromProject user route . snd)) >>= return . T.sequenceA 
+         do mAllProjects <- (runSQL projectList) >>= (mapM $ (projectInfoFromProject . snd)) >>= return . T.sequenceA 
             maybeErrorInRoute mAllProjects LogError (Just $ userName user) route "failed looking up users for project" "failed looking up users for project" $ \allProjects -> 
               answerAndLog (Just $ userName user) "listing projects" $
                 FrozoneGetProjects $ allProjects
@@ -239,15 +239,15 @@ projectApi currentRoute =
                           FrozoneCmdUpdateProjectUsers
             -}
 
-safeUserInfoFromUser :: User -> SafeUserInfo
-safeUserInfoFromUser user = SafeUserInfo
-    { suiName = userName user
-    , suiEmail = userEmail user
-    , suiIsAdmin = userIsAdmin user
+safeUserInfoFromUser :: User -> UserInfo
+safeUserInfoFromUser user = UserInfo
+    { sui_name = userName user
+    , sui_email = userEmail user
+    , sui_isAdmin = userIsAdmin user
     }
 
-projectInfoFromProject :: User -> String -> Project -> FrozoneAction (Maybe ProjectInfo)
-projectInfoFromProject user route proj =
+projectInfoFromProject :: Project -> FrozoneAction (Maybe ProjectInfo)
+projectInfoFromProject proj =
     do mUsers <- runSQL $ mapM DB.get $ projectUsers proj :: FrozoneAction [Maybe User]
        let mUserNames = T.sequenceA mUsers >>= return . map userName :: Maybe [T.Text]
        return $ mUserNames >>= \userNames -> 

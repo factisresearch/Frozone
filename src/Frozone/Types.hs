@@ -46,7 +46,7 @@ data FrozoneResponse
     = FrozoneCmdLogin
     | FrozoneCmdLogout
     -- user management
-    | FrozoneGetUsers [SafeUserInfo] -- [(UserName, EMail, isAdmin)]
+    | FrozoneGetUsers [UserInfo] -- [(UserName, EMail, isAdmin)]
     | FrozoneCmdCreateUser
     | FrozoneCmdDeleteUser
     | FrozoneCmdUpdatePassword
@@ -92,10 +92,10 @@ data RepoConfig
    , rc_boringFile :: Maybe FilePath
    } deriving (Show, Eq)
 
-data SafeUserInfo = SafeUserInfo
-   { suiName :: T.Text
-   , suiEmail :: T.Text
-   , suiIsAdmin :: Bool
+data UserInfo = UserInfo
+   { sui_name :: T.Text
+   , sui_email :: T.Text
+   , sui_isAdmin :: Bool
    }
 
 data ProjectInfo = ProjectInfo
@@ -108,9 +108,9 @@ data ProjectInfo = ProjectInfo
 
 
 $(deriveJSON (jDrop 3) ''FrozoneConfig)
-$(deriveJSON (jDrop 3) ''FrozoneResponse)
+$(deriveJSON (jDrop 0) ''FrozoneResponse)
 $(deriveJSON (jDrop 3) ''FrozoneError)
 $(deriveJSON (jDrop 4) ''FrozoneRepoCreated)
 $(deriveJSON (jDrop 3) ''RepoConfig)
-$(deriveJSON (jDrop 3) ''SafeUserInfo)
+$(deriveJSON (jDrop 4) ''UserInfo)
 $(deriveJSON (jDrop 3) ''ProjectInfo)
