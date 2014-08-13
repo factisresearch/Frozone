@@ -170,6 +170,13 @@ projectApi currentRoute =
             maybeErrorInRoute mAllProjects LogError (Just $ userName user) route "failed looking up users for project" "failed looking up users for project" $ \allProjects -> 
               answerAndLog (Just $ userName user) "listing projects" $
                 FrozoneGetProjects $ allProjects
+       userRoute GET [] currentRoute "/:projShortName" $ \route ->
+         withProjectFromShortName "projShortName" route $ \(_, user) (_, proj) ->
+           do mProjectInfo <- projectInfoFromProject $ proj
+              maybeErrorInRoute mProjectInfo LogError (Just $ userName user) route
+                "failed to lookup project info" "failed to lookup project info" $ \projInfo ->
+                  answerAndLog (Just $ userName user) ("looking up project info for \"" ++ T.unpack (projectName proj) ++ "\"") $
+                    FrozoneGetProjectInfo $ projInfo
        userRoute GET ["admin"] currentRoute "/create" $ \route (_,user) ->
          do (mName, mShortName, mRepoLoc, mSshKey) <- (uncurry4 $ liftM4 (,,,)) $
               (param "projName", param "projShortName", param "repoLoc", param "sshKey")

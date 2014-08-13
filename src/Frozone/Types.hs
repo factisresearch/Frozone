@@ -70,6 +70,7 @@ data FrozoneResponse
     | FrozoneInfo T.Text
     -- projects:
     | FrozoneGetProjects [ProjectInfo]
+    | FrozoneGetProjectInfo ProjectInfo
     | FrozoneCmdCreateProject
     | FrozoneCmdDeleteProject
     | FrozoneCmdUpdateProjectName
