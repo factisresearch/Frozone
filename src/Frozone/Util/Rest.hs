@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Frozone.Util.Rest where
 
-import Frozone.User
+import Frozone.User.DB
 import Frozone.Types
 
 import Frozone.Util.Db

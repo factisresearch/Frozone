@@ -1,4 +1,4 @@
-module Frozone.Project where
+module Frozone.Project.DB where
 
 import Frozone.Types
 
