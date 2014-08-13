@@ -22,10 +22,11 @@ import Control.Monad
 -- user management:
 userAPI :: String -> FrozoneApp ()
 userAPI currentRoute = 
-    do userRoute GET ["admin"] currentRoute "/list-users" $ \_ (_, user) ->
+    do userRoute GET ["admin"] currentRoute "/list" $ \_ (_, user) ->
          do allUsers <- runSQL $ DB.selectList [] [DB.Desc UserId, DB.LimitTo 50]
             answerAndLog (Just $ userName user) "listing users" $
               FrozoneGetUsers $ map ( safeUserInfoFromUser . DB.entityVal) allUsers
+
        userRoute POST ["admin"] currentRoute "/create" $ \route (_, user) ->
          do mNewUser <- param "name"
             mNewPassword <- param "password"
@@ -35,24 +36,32 @@ userAPI currentRoute =
             maybeRestAPIError mUserAndPasswordAndIsAdmin (Just $ userName user) route ["name","password","isAdmin"] $ \(newUser,newPassword,newIsAdmin) ->
               do runSQL $ createUser newUser newPassword newIsAdmin
                  answerAndLog (Just $ userName user) ("created user \"" ++ T.unpack newUser ++ "\"") FrozoneCmdCreateUser
+
        userRoute GET ["admin"] currentRoute "/delete" $ \route (_, user) ->
          do mUserToDelete <- param "name"
             maybeRestAPIError mUserToDelete (Just $ userName user) route ["name"] $ \(userToDelete) ->
               do runSQL $ deleteUser userToDelete
                  answerAndLog (Just $ userName user) ("deleted user \"" ++ T.unpack userToDelete ++ "\"") FrozoneCmdDeleteUser
-       userRoute GET [] currentRoute "/update/password" $ \route (userId, user) ->
+
+       subcomponent currentRoute "/update" $ updateAPI
+
+
+updateAPI currentRoute =
+    do userRoute GET [] currentRoute "/password" $ \route (userId, user) ->
          do mNewPassword <- param "password"
             maybeRestAPIError mNewPassword (Just $ userName user) route ["password"] $ \newPassword ->
               do runSQL $ DB.update userId [ UserPassword =. newPassword ]
                  answerAndLog (Just $ userName user) "updated password" $
                    FrozoneCmdUpdatePassword
-       userRoute GET [] currentRoute "/update/email" $ \route (userId, user) ->
+
+       userRoute GET [] currentRoute "/email" $ \route (userId, user) ->
          do mNewEmail <- param "email"
             maybeRestAPIError mNewEmail (Just $ userName user) route ["email"] $ \newEmail ->
               do runSQL $ DB.update userId [ UserEmail =. newEmail ]
                  answerAndLog (Just $ userName user) "updated email"
                    FrozoneCmdUpdateEmail
-       userRoute GET ["admin"] currentRoute "/update/isAdmin" $ \route (_, user) ->
+
+       userRoute GET ["admin"] currentRoute "/isAdmin" $ \route (_, user) ->
          do mUserToChangeName <- param "user"
             mIsAdmin <- param "isAdmin" >>= return . (liftM boolFromInt) :: FrozoneAction (Maybe Bool)
             let mUserAndIsAdmin =
@@ -64,6 +73,7 @@ userAPI currentRoute =
                       answerAndLog (Just $ userName user) (T.unpack userToChangeName ++ "is " ++ if newIsAdmin then "now" else "no longer" ++ " admin")
                         FrozoneCmdUpdateIsAdmin
 
+
 safeUserInfoFromUser :: User -> UserInfo
 safeUserInfoFromUser user = UserInfo
     { sui_name = userName user
@@ -74,14 +84,4 @@ safeUserInfoFromUser user = UserInfo
 boolFromInt :: Int -> Bool
 boolFromInt i = if i==0 then False else True
 
-
 tupelFromEntity entity = (DB.entityKey entity, DB.entityVal entity)
-
-{-
-login :: (UserId, User) -> FrozoneAction ()
-login (userId,user) =
-    do sessionId <- runSQL $ sessionIntoDB userId
-       markAsLoggedIn sessionId
-       answerAndLog (Just $ userName user) "logged in" $
-         FrozoneCmdLogin
--}

@@ -50,14 +50,19 @@ restApi currentRoute buildQueue =
             runSQL $ sessionDelFromDB userId
             markAsGuest
             answerAndLog (Just $ userName user) "logged out" $ FrozoneCmdLogout
+
 -- user management:
        subcomponent currentRoute "/user" $ userAPI
+
+-- project management:
        subcomponent currentRoute "/project" $ projectApi 
+
 -- patches:
        userRoute GET [] currentRoute "/patch/:patchId" $ \route -> -- return patch info
          withPatch "patchId" route $ \(_,user) (_,patch) -> 
             answerAndLog (Just $ userName user) "looking up patch info" $
               FrozoneGetPatch patch
+
        userRoute GET [] currentRoute "/build/patch/:patchId" $ \route -> -- return patch builds
          withPatch "patchId" route $ \(_,user) (patchId,_) -> 
            do buildList <- runSQL $ DB.selectList [BuildRepositoryPatch ==. patchId] [DB.Desc BuildRepositoryId]
@@ -66,32 +71,38 @@ restApi currentRoute buildQueue =
                 xs ->
                   answerAndLog (Just $ userName user) "looking up patch builds" $
                     FrozoneGetBuilds $ map DB.entityVal xs
+
 -- general information:
        userRoute GET [] currentRoute "/build/list-builds" $ \_ (_, user) ->
          do allBuilds <- runSQL $ DB.selectList [] [DB.Desc BuildRepositoryId, DB.LimitTo 50]
             answerAndLog (Just $ userName user) "listing builds" $
               FrozoneGetBuilds $ map DB.entityVal allBuilds
+
 -- build repositories:
        userRoute GET [] currentRoute "/build/patch/:buildId" $ \route -> -- return build info
          withBuild "buildId" route $ \(_,user) (_,build) ->
            answerAndLog (Just $ userName user) "looking up build info" $
              FrozoneGetBuild build
+
        userRoute GET [] currentRoute "/build/:buildId/logs" $ \route -> -- return build logs
          withBuild "buildId" route $ \(_,user) (buildId,_) ->
             do fullLogs <- runSQL $ DB.selectList [BuildLogRepo ==. buildId] [DB.Desc BuildLogTime, DB.LimitTo 50]
                answerAndLog (Just $ userName user) "looking up build info" $
                  FrozoneGetBuildLogs $ map DB.entityVal fullLogs
+
        userRoute GET [] currentRoute "/build/:buildId/file-changes" $ \route -> -- return build file-changes
          withBuild "buildId" route $ \(_,user) (buildId,_) ->
             do allChanges <- runSQL $ DB.selectList [BundleChangeRepoId ==. buildId] []
                answerAndLog (Just $ userName user) "looking up build file changes" $
                  FrozoneGetBuildFileChanges $ map DB.entityVal allChanges
+
        userRoute GET [] currentRoute "/build/:buildId/cancel" $ \route -> -- command: cancel build
          withBuild "buildId" route $ \(_,user) (buildId,_) ->
            do runSQL $ updateBuildState buildId BuildCanceled  "Aborted by user"
               -- todo: kill docker build if running
               answerAndLog (Just $ userName user) "canceling build" $
                 FrozoneCmdBuildCancel
+
        userRoute GET [] currentRoute "/build/:buildId/rebuild" $ \route -> -- command: retry build
          withBuild "buildId" route $ \(_,user) (buildId,_) ->
             do mBuild <- runSQL $ DB.get buildId
@@ -105,16 +116,19 @@ restApi currentRoute buildQueue =
                            answerAndLog (Just $ userName user) "retrying build" $
                              FrozoneCmdBuildRetry
                    else errorInRoute LogNote (Just $ userName user) route "Already building" "Already building"
+
 -- patch collection
        userRoute GET [] currentRoute "/collection/:collectionId" $ \route -> -- return collection
          withPatchCollection "collectionId" route $ \(_,user) (_,collection) ->
            answerAndLog (Just $ userName user) "looking up collection" $
              FrozoneGetCollection collection
+
        userRoute GET [] currentRoute "/collection/:collectionId/patches" $ \route -> -- return collection patches
          withPatchCollection "collectionId" route $ \(_,user) (collectionId,_) ->
             do patchList <- runSQL $ DB.selectList [PatchGroup ==. collectionId] [DB.Desc PatchId, DB.LimitTo 50]
                answerAndLog (Just $ userName user) "looking up collection patches" $
                  FrozoneGetCollectionPatches $ map DB.entityVal patchList
+
        userRoute GET [] currentRoute "/collection/:collectionId/close" $ \route -> -- command: collection close
          withPatchCollection "collectionId" route $ \(_,user) (collectionId,_) -> 
             do runSQL $ DB.update collectionId [ PatchCollectionOpen =. False ]
@@ -128,7 +142,6 @@ safeUserInfoFromUser user = UserInfo
     , sui_email = userEmail user
     , sui_isAdmin = userIsAdmin user
     }
-
 
 login :: (UserId, User) -> FrozoneAction ()
 login (userId,user) =
