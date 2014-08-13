@@ -68,6 +68,14 @@ data FrozoneResponse
     | FrozoneGetCollectionPatches [Patch]
     | FrozoneCmdCollectionClose
     | FrozoneInfo T.Text
+    -- projects:
+    | FrozoneGetProjects [ProjectInfo]
+    | FrozoneCmdCreateProject
+    | FrozoneCmdDeleteProject
+    | FrozoneCmdUpdateProjectName
+    | FrozoneCmdUpdateProjectShortName
+    | FrozoneCmdUpdateProjectUsers
+
 
 data FrozoneError
    = FrozoneError
@@ -90,6 +98,14 @@ data SafeUserInfo = SafeUserInfo
    , suiIsAdmin :: Bool
    }
 
+data ProjectInfo = ProjectInfo
+   { pi_name :: T.Text
+   , pi_shortName :: T.Text
+   , pi_repoLoc :: T.Text
+   , pi_sshKey :: T.Text
+   , pi_users :: [T.Text]
+   }
+
 
 $(deriveJSON (jDrop 3) ''FrozoneConfig)
 $(deriveJSON (jDrop 3) ''FrozoneResponse)
@@ -97,3 +113,4 @@ $(deriveJSON (jDrop 3) ''FrozoneError)
 $(deriveJSON (jDrop 4) ''FrozoneRepoCreated)
 $(deriveJSON (jDrop 3) ''RepoConfig)
 $(deriveJSON (jDrop 3) ''SafeUserInfo)
+$(deriveJSON (jDrop 3) ''ProjectInfo)

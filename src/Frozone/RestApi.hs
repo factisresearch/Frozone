@@ -3,6 +3,7 @@
 module Frozone.RestApi where
 
 import Frozone.User
+import Frozone.Project
 import Frozone.Types
 --import Frozone.Util.Rest
 
@@ -21,6 +22,8 @@ import qualified Database.Persist as DB
 import Database.Persist ((==.), (=.))
 
 import Control.Monad
+import Data.List
+import qualified Data.Traversable as T
 
 
 
@@ -162,20 +165,79 @@ restApi currentRoute buildQueue =
                  FrozoneCmdCollectionClose
 
 projectApi currentRoute = 
-    do userRoute GET ["admin"] currentRoute "/list-projects" $ \route ->
-         withProjectFromShortName "projShortName" route $ \(userId,user) (projectId,project) ->
-           return ()
-       userRoute GET ["admin"] currentRoute "/create" $ \route (userId,user) ->
-         do return ()
-       userRoute GET ["admin"] currentRoute "/delete" $ \route (userId,user) ->
-         do return ()
+    do userRoute GET ["admin"] currentRoute "/list-projects" $ \route (_,user) ->
+         do mAllProjects <- (runSQL projectList) >>= (mapM $ (projectInfoFromProject user route . snd)) >>= return . T.sequenceA 
+            maybeErrorInRoute mAllProjects LogError (Just $ userName user) route "failed looking up users for project" "failed looking up users for project" $ \allProjects -> 
+              answerAndLog (Just $ userName user) "listing projects" $
+                FrozoneGetProjects $ allProjects
+       userRoute GET ["admin"] currentRoute "/create" $ \route (_,user) ->
+         do (mName, mShortName, mRepoLoc, mSshKey) <- (uncurry4 $ liftM4 (,,,)) $
+              (param "projName", param "projShortName", param "repoLoc", param "sshKey")
+            let mProjParams = (uncurry4 $ liftM4 (,,,)) $ (mName, mShortName, mRepoLoc, mSshKey) :: Maybe (T.Text,T.Text,T.Text,T.Text)
+            maybeRestAPIError mProjParams (Just $ userName user) route ["projName","projShortName","repoLoc","sshKey"] $ \projParams ->
+              do mProjectKV <- (runSQL . uncurry4 createProject) $ projParams :: FrozoneAction (Maybe (ProjectId, Project))
+                 maybeErrorInRoute mProjectKV LogNote (Just $ userName user) route
+                   "failed to create project" "failed to create project" $ \(_, proj) ->
+                     answerAndLog (Just $ userName user)
+                       ("creating project \"" ++ T.unpack (projectName proj) ++ "\", short name: \"" ++ T.unpack (projectShortName proj) ++ "\"") $
+                       FrozoneCmdCreateProject
+       userRoute GET ["admin"] currentRoute "/delete" $ \route ->
+         withProjectFromShortName "projShortName" route $ \(_,user) (projId, proj) ->
+           do runSQL $ deleteProject projId
+              answerAndLog (Just $ userName user) ("deleted project \"" ++ (T.unpack $ projectName proj) ++ "\"") $
+                FrozoneCmdDeleteProject
        subcomponent currentRoute "/update" $ \currentRoute -> 
-         do userRoute GET ["admin"] currentRoute "/name" $ \route (userId,user) ->
-              do return ()
-            userRoute GET ["admin"] currentRoute "/shortName" $ \route (userId,user) ->
-              do return ()
-            userRoute GET ["admin"] currentRoute "/users" $ \route (userId,user) ->
-              do return ()
+         do userRoute GET ["admin"] currentRoute "/name" $ \route ->
+              withProjectFromShortName "projShortName" route $ \(_,user) (projId, _) ->
+                do mName <- (param "name")
+                   maybeRestAPIError mName (Just $ userName user) route ["name"] $ \name ->
+                     do runSQL $ DB.update projId [ ProjectName =. name ]
+                        answerAndLog (Just $ userName user) "updating project name" $
+                          FrozoneCmdUpdateProjectName
+            userRoute GET ["admin"] currentRoute "/shortName" $ \route ->
+              withProjectFromShortName "projShortName" route $ \(_,user) (projId, _) ->
+                do mShortName <- (param "shortName")
+                   maybeRestAPIError mShortName (Just $ userName user) route ["shortName"] $ \shortName ->
+                     do runSQL $ DB.update projId [ ProjectShortName =. shortName ]
+                        answerAndLog (Just $ userName user) "updating project shortName" $
+                          FrozoneCmdUpdateProjectShortName
+            userRoute GET ["admin"] currentRoute "/users/add" $ \route ->
+              withProjectFromShortName "projShortName" route $ \(_,user) (projId, _) ->
+                do mNewUserName <- (param "name")
+                   maybeRestAPIError mNewUserName (Just $ userName user) route ["shortName"] $ \newUserName ->
+                     do mUserId <- runSQL $ DB.getBy (UniqueUserName newUserName) >>= return . (liftM DB.entityKey)
+                        maybeErrorInRoute mUserId LogNote (Just $ userName user) route
+                          "user not found" "user not found" $ \userId ->
+                            do updateWorked <- runSQL $ updateField ProjectUsers projId $ \projOld ->
+                                 [userId] `union` projectUsers projOld 
+                               if not updateWorked 
+                                 then errorInRoute LogError (Just $ userName user) route "failed updating project" "failed updating project"
+                                 else 
+                                   answerAndLog (Just $ userName user) "updating project users" $
+                                     FrozoneCmdUpdateProjectUsers
+            userRoute GET ["admin"] currentRoute "/users/delete" $ \route ->
+              withProjectFromShortName "projShortName" route $ \(_,user) (projId, _) ->
+                do mNewUserName <- (param "name")
+                   maybeRestAPIError mNewUserName (Just $ userName user) route ["shortName"] $ \newUserName ->
+                     do mUserId <- runSQL $ DB.getBy (UniqueUserName newUserName) >>= return . (liftM DB.entityKey)
+                        maybeErrorInRoute mUserId LogNote (Just $ userName user) route
+                          "user not found" "user not found" $ \userId ->
+                            do updateWorked <- runSQL $ updateField ProjectUsers projId $ \projOld ->
+                                 projectUsers projOld \\ [userId]
+                               if not updateWorked 
+                                 then errorInRoute LogError (Just $ userName user) route "failed updating project" "failed updating project"
+                                 else 
+                                   answerAndLog (Just $ userName user) "updating project users" $
+                                     FrozoneCmdUpdateProjectUsers
+            {-
+            userRoute GET ["admin"] currentRoute "/users" $ \route ->
+              withProjectFromShortName "projShortName" route $ \(_,user) (projId, _) ->
+                do mUsers <- (param "users")
+                   maybeRestAPIError mUsers (Just $ userName user) route ["shortName"] $ \users ->
+                     do runSQL $ DB.update projId [ ProjectUsers =. users ]
+                        answerAndLog (Just $ userName user) "updating project users" $
+                          FrozoneCmdUpdateProjectUsers
+            -}
 
 safeUserInfoFromUser :: User -> SafeUserInfo
 safeUserInfoFromUser user = SafeUserInfo
@@ -183,6 +245,19 @@ safeUserInfoFromUser user = SafeUserInfo
     , suiEmail = userEmail user
     , suiIsAdmin = userIsAdmin user
     }
+
+projectInfoFromProject :: User -> String -> Project -> FrozoneAction (Maybe ProjectInfo)
+projectInfoFromProject user route proj =
+    do mUsers <- runSQL $ mapM DB.get $ projectUsers proj :: FrozoneAction [Maybe User]
+       let mUserNames = T.sequenceA mUsers >>= return . map userName :: Maybe [T.Text]
+       return $ mUserNames >>= \userNames -> 
+         Just $ ProjectInfo
+           { pi_name = projectName proj
+           , pi_shortName = projectShortName proj
+           , pi_repoLoc = projectRepoLoc proj
+           , pi_sshKey = projectSshKey proj
+           , pi_users = userNames
+           }
 
 boolFromInt :: Int -> Bool
 boolFromInt i = if i==0 then False else True

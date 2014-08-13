@@ -145,6 +145,11 @@ with name err f (userId,user) =
        maybe (json $ FrozoneError err ) (\(iD,val) -> f ((userId,user),(iD,val))) mId_Val
 -}
 
+{-
+getParams :: Maybe User -> String -> [String] -> []
+getParams mUser route paramNames = 
+-}
+
 subcomponent :: MonadIO m => String -> T.Text -> (String -> SpockT m a) -> SpockT m a
 subcomponent prependToRoute route f = S.subcomponent route (f $ prependToRoute ++ T.unpack route)
 
@@ -169,3 +174,4 @@ userRoute stdMeth userRights routeToPrepend route f =
         else return $ True
 
 uncurry3 f (a,b,c) = f a b c
+uncurry4 f (a,b,c,d) = f a b c d
