@@ -30,7 +30,7 @@ projectApi currentRoute =
                 FrozoneGetProjects $ allProjects
 
        userRoute GET [] currentRoute "/:projShortName" $ \route ->
-         withProjectFromShortName "projShortName" route $ \(_, user) (_, proj) ->
+         withProjectFromShortName "projShortName" route $ \(_, proj) (_, user) ->
            do mProjectInfo <- projectInfoFromProject $ proj
               maybeErrorInRoute mProjectInfo LogError (Just $ userName user) route
                 "failed to lookup project info" "failed to lookup project info" $ \projInfo ->
@@ -50,7 +50,7 @@ projectApi currentRoute =
                        FrozoneCmdCreateProject
 
        userRoute GET ["admin"] currentRoute "/delete" $ \route ->
-         withProjectFromShortName "projShortName" route $ \(_,user) (projId, proj) ->
+         withProjectFromShortName "projShortName" route $ \(projId, proj) (_,user) ->
            do runSQL $ deleteProject projId
               answerAndLog (Just $ userName user) ("deleted project \"" ++ (T.unpack $ projectName proj) ++ "\"") $
                 FrozoneCmdDeleteProject
@@ -60,7 +60,7 @@ projectApi currentRoute =
 
 updateAPI currentRoute =
     do userRoute GET ["admin"] currentRoute "/name" $ \route ->
-         withProjectFromShortName "projShortName" route $ \(_,user) (projId, _) ->
+         withProjectFromShortName "projShortName" route $ \(projId, _) (_,user) ->
            do mName <- (param "name")
               maybeRestAPIError mName (Just $ userName user) route ["name"] $ \name ->
                 do runSQL $ DB.update projId [ ProjectName =. name ]
@@ -68,7 +68,7 @@ updateAPI currentRoute =
                      FrozoneCmdUpdateProjectName
 
        userRoute GET ["admin"] currentRoute "/shortName" $ \route ->
-         withProjectFromShortName "projShortName" route $ \(_,user) (projId, _) ->
+         withProjectFromShortName "projShortName" route $ \(projId, _) (_,user) ->
            do mShortName <- (param "shortName")
               maybeRestAPIError mShortName (Just $ userName user) route ["shortName"] $ \shortName ->
                 do runSQL $ DB.update projId [ ProjectShortName =. shortName ]
@@ -76,7 +76,7 @@ updateAPI currentRoute =
                      FrozoneCmdUpdateProjectShortName
 
        userRoute GET ["admin"] currentRoute "/users/add" $ \route ->
-         withProjectFromShortName "projShortName" route $ \(_,user) (projId, _) ->
+         withProjectFromShortName "projShortName" route $ \(projId, _) (_,user) ->
            do mNewUserName <- (param "name")
               maybeRestAPIError mNewUserName (Just $ userName user) route ["shortName"] $ \newUserName ->
                 do mUserId <- runSQL $ DB.getBy (UniqueUserName newUserName) >>= return . (liftM DB.entityKey)
@@ -91,7 +91,7 @@ updateAPI currentRoute =
                                 FrozoneCmdUpdateProjectUsers
 
        userRoute GET ["admin"] currentRoute "/users/delete" $ \route ->
-         withProjectFromShortName "projShortName" route $ \(_,user) (projId, _) ->
+         withProjectFromShortName "projShortName" route $ \(projId, _) (_,user) ->
            do mNewUserName <- (param "name")
               maybeRestAPIError mNewUserName (Just $ userName user) route ["shortName"] $ \newUserName ->
                 do mUserId <- runSQL $ DB.getBy (UniqueUserName newUserName) >>= return . (liftM DB.entityKey)

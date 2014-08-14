@@ -60,7 +60,7 @@ restErrorPriv logLevel logMsg jsonMsg =
 --
 withPatch
     :: T.Text -> String
-    -> ((UserId,User) -> (PatchId,Patch) -> FrozoneAction ())
+    -> ((PatchId,Patch) -> (UserId,User) -> FrozoneAction ())
     -> (UserId,User) -> FrozoneAction ()
 --withPath = with
 withPatch name route f (userId,user) = 
@@ -68,11 +68,11 @@ withPatch name route f (userId,user) =
        maybeRestAPIError mId (Just $ userName user) route [T.unpack name] $ \iD ->
          do mVal <- runSQL $ DB.get iD
             maybeErrorInRoute mVal LogNote (Just $ userName user) route "patch not found" "patch not found" $ \val ->
-              f (userId,user) (iD,val)
+              f (iD,val) (userId,user)
 
 withBuild
     :: T.Text -> String
-    -> ((UserId,User) -> (BuildRepositoryId,BuildRepository) -> FrozoneAction ())
+    -> ((BuildRepositoryId,BuildRepository) -> (UserId,User) -> FrozoneAction ())
     -> (UserId,User) -> FrozoneAction ()
 --withPath = with
 withBuild name route f (userId,user) = 
@@ -80,7 +80,7 @@ withBuild name route f (userId,user) =
        maybeRestAPIError mId (Just $ userName user) route [T.unpack name] $ \iD ->
          do mVal <- runSQL $ DB.get iD
             maybeErrorInRoute mVal LogNote (Just $ userName user) route "build not found" "build not found" $ \val ->
-              f (userId,user) (iD,val)
+              f (iD,val) (userId,user)
 {-
 withBuild
     :: T.Text -> T.Text
@@ -96,7 +96,7 @@ withBuild name err f (userId,user) =
 
 withPatchCollection 
     :: T.Text -> String
-    -> ((UserId,User) -> (PatchCollectionId,PatchCollection) -> FrozoneAction ())
+    -> ((PatchCollectionId,PatchCollection) -> (UserId,User) -> FrozoneAction ())
     -> (UserId,User) -> FrozoneAction ()
 --withPatchCollection = with
 withPatchCollection name route f (userId,user) =
@@ -104,11 +104,11 @@ withPatchCollection name route f (userId,user) =
        maybeRestAPIError mId (Just $ userName user) route [T.unpack name] $ \iD ->
          do mVal <- runSQL $ DB.get iD
             maybeErrorInRoute mVal LogNote (Just $ userName user) route "patch collection not found" "patch collection not found" $ \val ->
-              f (userId,user) (iD,val)
+              f (iD,val) (userId,user)
     
 withRepo 
     :: T.Text -> String
-    -> ((UserId,User) -> (BuildRepositoryId,BuildRepository) -> FrozoneAction ())
+    -> ((BuildRepositoryId,BuildRepository) -> (UserId,User) -> FrozoneAction ())
     -> (UserId,User) -> FrozoneAction ()
 --withRepoCollection = with
 withRepo name route f (userId,user) =
@@ -116,13 +116,13 @@ withRepo name route f (userId,user) =
        maybeRestAPIError mId (Just $ userName user) route [T.unpack name] $ \iD ->
          do mVal <- runSQL $ DB.get iD
             maybeErrorInRoute mVal LogNote (Just $ userName user) route "repo not found" "repo not found" $ \val ->
-              f (userId,user) (iD,val)
+              f (iD,val) (userId,user)
          --let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
        --maybe (json $ FrozoneError err ) (\(iD,val) -> f ((userId,user),(iD,val))) mId_Val
 
 withProjectFromShortName
     :: T.Text -> String
-    -> ((UserId,User) -> (ProjectId,Project) -> FrozoneAction ())
+    -> ((ProjectId,Project) -> (UserId,User) -> FrozoneAction ())
     -> (UserId,User) -> FrozoneAction ()
 --withBuild = with
 withProjectFromShortName shortNameParam route f (userId,user) =
@@ -131,10 +131,7 @@ withProjectFromShortName shortNameParam route f (userId,user) =
          do mProjEntity <- runSQL $ DB.getBy (UniqueShortName shortName)
             let mIdAndVal = liftM (\ent -> (DB.entityKey ent, DB.entityVal ent)) mProjEntity
             maybeErrorInRoute mIdAndVal LogNote (Just $ userName user) route "project not found" "project not found" $ \projKV ->
-              f (userId,user) projKV
-       {-
-       maybe (json $ FrozoneError err) (\projKV -> f ((userId,user),projKV)) mIdAndVal
-       -}
+              f projKV (userId,user) 
 
 {-
 with :: T.Text -> T.Text -> (((UserId,User), (key,val)) -> FrozoneAction ()) -> ((UserId,User) -> FrozoneAction ())
