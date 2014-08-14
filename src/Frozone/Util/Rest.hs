@@ -19,6 +19,7 @@ import qualified Database.Persist.Sql as DB
 import qualified Data.Text as T
 import Control.Monad
 import Control.Monad.IO.Class
+import qualified Data.Traversable as Tr
 
 
 -- |print logMsg to log, send answer to client
@@ -56,8 +57,76 @@ restErrorPriv logLevel logMsg jsonMsg =
        json $ FrozoneError jsonMsg
 
 
+withPatchSafe
+    :: T.Text -> String
+    -> ((PatchId,Patch) -> (UserId,User) -> FrozoneAction ())
+    -> (UserId,User) -> FrozoneAction ()
+withPatchSafe name route f = withPatch name route f'
+    where
+      f' patchKV@(patchId,patch) userKV@(userId,user) =
+           -- 1. check if user is in a project that this patch is a part of
+        do mIsAllowed <- runSQL $
+             do buildRepoEntities <- DB.selectList [ BuildRepositoryPatch DB.==. patchId] []
+                let projIds = map DB.entityVal buildRepoEntities >>= return . buildRepositoryProject :: [ProjectId]
+                projectsMaybe <- mapM DB.get projIds :: DB.SqlPersistM [Maybe Project]
+                let
+                  mProjects = Tr.sequenceA projectsMaybe :: Maybe [Project]
+                  mUsersInProjects = mProjects >>= return . map projectUsers >>= return . join :: Maybe [UserId]
+                return $ liftM (userId `elem`) mUsersInProjects
+           -- 2. perform 'f' only, if the condition is true
+           maybeErrorInRoute mIsAllowed LogError (Just $ userName user) route
+             "database error loading users for patch" "server database error" $ \isAllowed ->
+             if not (isAllowed || userIsAdmin user)
+               then
+                errorInRoute LogNote (Just $ userName user) route
+                  ("acces forbidden to patch \"" ++ T.unpack (patchName patch) ++ "\"")
+                  "no access to patch"
+               else f patchKV userKV
+withBuildRepoSafe
+    :: T.Text -> String
+    -> ((BuildRepositoryId,BuildRepository) -> (UserId,User) -> FrozoneAction ())
+    -> (UserId,User) -> FrozoneAction ()
+withBuildRepoSafe name route f = withBuildRepo name route f'
+    where
+      f' repoKV@(repoId,repo) userKV@(userId,user) =
+           -- 1. check if user is in a project that this repo is a part of
+        do mIsAllowed <- runSQL $
+             do mProject <- DB.get $ buildRepositoryProject repo
+                let userIds = liftM projectUsers $ mProject
+                return $ liftM (userId `elem`) $ userIds
+           -- 2. perform 'f' only, if the condition is true
+           maybeErrorInRoute mIsAllowed LogError (Just $ userName user) route
+             "database error loading users for build repository" "server database error" $ \isAllowed ->
+             if not (isAllowed || userIsAdmin user)
+               then
+                errorInRoute LogNote (Just $ userName user) route
+                  ("acces forbidden to build repository with id \"" ++ show repoId ++ "\"")
+                  "no access to build repository"
+               else f repoKV userKV
+withPatchCollectionSafe
+    :: T.Text -> String
+    -> ((PatchCollectionId,PatchCollection) -> (UserId,User) -> FrozoneAction ())
+    -> (UserId,User) -> FrozoneAction ()
+withPatchCollectionSafe name route f = withPatchCollection name route f'
+    where
+      f' collectionKV@(collectionId,collection) userKV@(userId,user) =
+             -- 1. check if user is in a project that this patch collection is a part of
+          do mIsAllowed <-
+                 runSQL $
+                     do mProject <- DB.get $ patchCollectionProject collection
+                        let mUsersInProject = mProject >>= return . projectUsers
+                        return $ liftM (userId `elem`) mUsersInProject
+             -- 2. perform 'f' only, if the condition is true
+             maybeErrorInRoute mIsAllowed LogError (Just $ userName user) route
+               "database error loading users for patch collection" "server database error" $ \isAllowed ->
+                   if not (isAllowed || userIsAdmin user)
+                     then
+                      errorInRoute LogNote (Just $ userName user) route
+                        ("acces forbidden to patch collection with id \"" ++ show collectionId++ "\"")
+                        "no access to patch collection"
+                     else f collectionKV userKV
+             
 
---
 withPatch
     :: T.Text -> String
     -> ((PatchId,Patch) -> (UserId,User) -> FrozoneAction ())
@@ -70,17 +139,6 @@ withPatch name route f (userId,user) =
             maybeErrorInRoute mVal LogNote (Just $ userName user) route "patch not found" "patch not found" $ \val ->
               f (iD,val) (userId,user)
 
-withBuild
-    :: T.Text -> String
-    -> ((BuildRepositoryId,BuildRepository) -> (UserId,User) -> FrozoneAction ())
-    -> (UserId,User) -> FrozoneAction ()
---withPath = with
-withBuild name route f (userId,user) = 
-    do mId <- param name
-       maybeRestAPIError mId (Just $ userName user) route [T.unpack name] $ \iD ->
-         do mVal <- runSQL $ DB.get iD
-            maybeErrorInRoute mVal LogNote (Just $ userName user) route "build not found" "build not found" $ \val ->
-              f (iD,val) (userId,user)
 {-
 withBuild
     :: T.Text -> T.Text
@@ -106,12 +164,12 @@ withPatchCollection name route f (userId,user) =
             maybeErrorInRoute mVal LogNote (Just $ userName user) route "patch collection not found" "patch collection not found" $ \val ->
               f (iD,val) (userId,user)
     
-withRepo 
+withBuildRepo 
     :: T.Text -> String
     -> ((BuildRepositoryId,BuildRepository) -> (UserId,User) -> FrozoneAction ())
     -> (UserId,User) -> FrozoneAction ()
---withRepoCollection = with
-withRepo name route f (userId,user) =
+--withBuildRepoCollection = with
+withBuildRepo name route f (userId,user) =
     do mId <- param name
        maybeRestAPIError mId (Just $ userName user) route [T.unpack name] $ \iD ->
          do mVal <- runSQL $ DB.get iD
@@ -119,6 +177,21 @@ withRepo name route f (userId,user) =
               f (iD,val) (userId,user)
          --let mId_Val = (uncurry $ liftM2 (,)) $ (mId,mVal)
        --maybe (json $ FrozoneError err ) (\(iD,val) -> f ((userId,user),(iD,val))) mId_Val
+
+{- also checks if the user is part of the project -}
+withProjectFromShortNameSafe
+    :: T.Text -> String
+    -> ((ProjectId,Project) -> (UserId,User) -> FrozoneAction ())
+    -> (UserId,User) -> FrozoneAction ()
+withProjectFromShortNameSafe shortNameParam route f = withProjectFromShortName shortNameParam route f'
+    where
+      f' projKV@(_,proj) userKV@(userId,user) =
+        if not (userId `elem` projectUsers proj || userIsAdmin user)
+        then
+          errorInRoute LogNote (Just $ userName user) route
+            ("user is not in project \"" ++ T.unpack (projectName proj) ++ "\"")
+            "not part of the project"
+        else f projKV userKV
 
 withProjectFromShortName
     :: T.Text -> String

@@ -59,13 +59,13 @@ restApi currentRoute buildQueue =
 
 -- patches:
        userRoute GET [] currentRoute "/patch/:patchId" $ \route -> -- return patch info
-         --withProjectFromShortName "projShortName" route $ \(_, proj) ->
-         withPatch "patchId" route $ \(_,patch) (_,user) -> 
-          answerAndLog (Just $ userName user) "looking up patch info" $
-            FrozoneGetPatch patch
+         --withProjectFromShortNameSafe "projShortName" route $ \(_, proj) ->
+           withPatchSafe "patchId" route $ \(_,patch) (_,user) -> 
+            answerAndLog (Just $ userName user) "looking up patch info" $
+              FrozoneGetPatch patch
 
        userRoute GET [] currentRoute "/build/patch/:patchId" $ \route -> -- return patch builds
-         withPatch "patchId" route $ \(patchId,_) (_,user) -> 
+         withPatchSafe "patchId" route $ \(patchId,_) (_,user) -> 
            do buildList <- runSQL $ DB.selectList [BuildRepositoryPatch ==. patchId] [DB.Desc BuildRepositoryId]
               case buildList of
                 [] -> errorInRoute LogNote (Just $ userName user) route "No builds found belonging to this patch!" "no builds found belonging to this patch"
@@ -81,31 +81,31 @@ restApi currentRoute buildQueue =
 
 -- build repositories:
        userRoute GET [] currentRoute "/build/patch/:buildId" $ \route -> -- return build info
-         withBuild "buildId" route $ \(_,build) (_,user) ->
+         withBuildRepoSafe "buildId" route $ \(_,build) (_,user) ->
            answerAndLog (Just $ userName user) "looking up build info" $
              FrozoneGetBuild build
 
        userRoute GET [] currentRoute "/build/:buildId/logs" $ \route -> -- return build logs
-         withBuild "buildId" route $ \(buildId,_) (_,user) ->
+         withBuildRepoSafe "buildId" route $ \(buildId,_) (_,user) ->
             do fullLogs <- runSQL $ DB.selectList [BuildLogRepo ==. buildId] [DB.Desc BuildLogTime, DB.LimitTo 50]
                answerAndLog (Just $ userName user) "looking up build info" $
                  FrozoneGetBuildLogs $ map DB.entityVal fullLogs
 
        userRoute GET [] currentRoute "/build/:buildId/file-changes" $ \route -> -- return build file-changes
-         withBuild "buildId" route $ \(buildId,_) (_,user) ->
+         withBuildRepoSafe "buildId" route $ \(buildId,_) (_,user) ->
             do allChanges <- runSQL $ DB.selectList [BundleChangeRepoId ==. buildId] []
                answerAndLog (Just $ userName user) "looking up build file changes" $
                  FrozoneGetBuildFileChanges $ map DB.entityVal allChanges
 
        userRoute GET [] currentRoute "/build/:buildId/cancel" $ \route -> -- command: cancel build
-         withBuild "buildId" route $ \(buildId,_) (_,user) ->
+         withBuildRepoSafe "buildId" route $ \(buildId,_) (_,user) ->
            do runSQL $ updateBuildState buildId BuildCanceled  "Aborted by user"
               -- todo: kill docker build if running
               answerAndLog (Just $ userName user) "canceling build" $
                 FrozoneCmdBuildCancel
 
        userRoute GET [] currentRoute "/build/:buildId/rebuild" $ \route -> -- command: retry build
-         withBuild "buildId" route $ \(buildId,_) (_,user) ->
+         withBuildRepoSafe "buildId" route $ \(buildId,_) (_,user) ->
             do mBuild <- runSQL $ DB.get buildId
                case mBuild of
                  Nothing ->
@@ -120,18 +120,18 @@ restApi currentRoute buildQueue =
 
 -- patch collection
        userRoute GET [] currentRoute "/collection/:collectionId" $ \route -> -- return collection
-         withPatchCollection "collectionId" route $ \(_,collection) (_,user) ->
+         withPatchCollectionSafe "collectionId" route $ \(_,collection) (_,user) ->
            answerAndLog (Just $ userName user) "looking up collection" $
              FrozoneGetCollection collection
 
        userRoute GET [] currentRoute "/collection/:collectionId/patches" $ \route -> -- return collection patches
-         withPatchCollection "collectionId" route $ \(collectionId,_) (_,user) ->
+         withPatchCollectionSafe "collectionId" route $ \(collectionId,_) (_,user) ->
             do patchList <- runSQL $ DB.selectList [PatchGroup ==. collectionId] [DB.Desc PatchId, DB.LimitTo 50]
                answerAndLog (Just $ userName user) "looking up collection patches" $
                  FrozoneGetCollectionPatches $ map DB.entityVal patchList
 
        userRoute GET [] currentRoute "/collection/:collectionId/close" $ \route -> -- command: collection close
-         withPatchCollection "collectionId" route $ \(collectionId,_) (_,user) -> 
+         withPatchCollectionSafe "collectionId" route $ \(collectionId,_) (_,user) -> 
             do runSQL $ DB.update collectionId [ PatchCollectionOpen =. False ]
                answerAndLog (Just $ userName user) "closing collection" $
                  FrozoneCmdCollectionClose
