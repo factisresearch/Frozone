@@ -49,7 +49,7 @@ Project json
 Session json
      user UserId --- > User
      validUntil UTCTime
-     UniqueUserId user
+     --UniqueUserId user
 
 BundleData json -- collection of patches sent
      bundleHash T.Text
