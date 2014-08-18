@@ -29,7 +29,7 @@ projectApi currentRoute =
               answerAndLog (Just $ userName user) "listing projects" $
                 FrozoneGetProjects $ allProjects
 
-       userRoute GET [] currentRoute "/:projShortName" $ \route ->
+       userRoute GET [] currentRoute "" $ \route ->
          withProjectFromShortName "projShortName" route $ \(_, proj) (_, user) ->
            do mProjectInfo <- projectInfoFromProject $ proj
               maybeErrorInRoute mProjectInfo LogError (Just $ userName user) route
@@ -74,6 +74,21 @@ updateAPI currentRoute =
                 do runSQL $ DB.update projId [ ProjectShortName =. shortName ]
                    answerAndLog (Just $ userName user) "updating project shortName" $
                      FrozoneCmdUpdateProjectShortName
+
+       userRoute GET ["admin"] currentRoute "/repoLoc" $ \route ->
+         withProjectFromShortName "projShortName" route $ \(projId, _) (_,user) ->
+           do mShortName <- (param "repoLoc")
+              maybeRestAPIError mShortName (Just $ userName user) route ["repoLoc"] $ \repoLoc ->
+                do runSQL $ DB.update projId [ ProjectShortName =. repoLoc ]
+                   answerAndLog (Just $ userName user) "updating project repoLoc" $
+                     FrozoneCmdUpdateProjectRepoLoc
+       userRoute GET ["admin"] currentRoute "/sshKey" $ \route ->
+         withProjectFromShortName "projShortName" route $ \(projId, _) (_,user) ->
+           do mShortName <- (param "sshKey")
+              maybeRestAPIError mShortName (Just $ userName user) route ["sshKey"] $ \sshKey ->
+                do runSQL $ DB.update projId [ ProjectShortName =. sshKey ]
+                   answerAndLog (Just $ userName user) "updating project sshKey" $
+                     FrozoneCmdUpdateProjectSSHKey
 
        userRoute GET ["admin"] currentRoute "/users/add" $ \route ->
          withProjectFromShortName "projShortName" route $ \(projId, _) (_,user) ->

@@ -76,6 +76,9 @@ data FrozoneResponse
     | FrozoneCmdUpdateProjectName
     | FrozoneCmdUpdateProjectShortName
     | FrozoneCmdUpdateProjectUsers
+    | FrozoneCmdUpdateProjectRepoLoc
+    | FrozoneCmdUpdateProjectSSHKey
+    | FrozoneCmdCheck
 
 
 data FrozoneError
