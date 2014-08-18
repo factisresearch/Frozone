@@ -71,16 +71,19 @@ bundleApi currentRoute =
                          do updateBuildState buildRepoId BuildFailed (T.pack errorMsg)
                             sendNotifications buildRepoId
                   return WorkError
-       userRoute POST [] currentRoute "/check" $ \_ ->
-         withProjectFromShortName "projShortName" "project not found" $ \projKV userKV ->
-           bundleCheckAction (userKV,projKV) bundleWorker patchWorker
+       userRoute POST [] currentRoute "/check" $ \route ->
+         withProjectFromShortName "projShortName" "project not found" $ \(projId,proj) (userId,user) ->
+           do bundleCheckAction route ((userId,user), (projId,proj)) bundleWorker patchWorker
+              answerAndLog (Just $ userName user)
+                ("checked project \"" ++ T.unpack (projectName proj)++ "\"")
+                FrozoneCmdCheck
        return patchWorker
 
-bundleCheckAction :: ((UserId,User),(ProjectId,Project)) -> WorkQueue NewBundleArrived -> WorkQueue BuildRepositoryId -> FrozoneAction ()
-bundleCheckAction ((userId,user),(projId,proj)) wq rwq =
+bundleCheckAction :: String -> ((UserId,User),(ProjectId,Project)) -> WorkQueue NewBundleArrived -> WorkQueue BuildRepositoryId -> FrozoneAction ()
+bundleCheckAction route ((userId,user),(projId,proj)) wq rwq =
     do let usersInProject = projectUsers proj :: [UserId]
        if not (userId `elem` usersInProject)
-       then errorInRoute LogNote (Just $ userName user) "/check" "check action not executed. reason: user not part of the project" "user not in project"
+       then errorInRoute LogNote (Just $ userName user) route "check action not executed. reason: user not part of the project" "user not in project"
        else
          do allFiles <- files
             case HM.lookup "patch-bundle" allFiles of
