@@ -92,7 +92,8 @@ bundleCheckAction route ((userId,user),(projId,proj)) wq rwq =
                      addWork WorkNow (NewBundleArrived (projId,proj) (userId,user) bs rwq) wq
                      json (FrozoneInfo "Patch bundle will now be processed!")
               Nothing ->
-                  json (FrozoneError "No patch-bundle sent!")
+                  errorInRoute LogError (Just $ userName user) route
+                    "no patch-bundle sent" "no patch-bundle sent"
 
 closeDangelingActions :: (PersistMonadBackend m ~ SqlBackend, MonadIO m, PersistQuery m, MonadSqlPersist m) => m ()
 closeDangelingActions =
