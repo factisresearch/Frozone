@@ -33,9 +33,11 @@ cookDir: server/cook
 entryPoint: 07_fullbuild.cook
 boringFile: .boring
 ```
-cookDir: the path where the two other files are located
-entryPoint: the cook file, describing how to build the project
-boringFile: used by docker(cook) ?
+Explanation:
+
+* cookDir: the path where the two other files are located
+* entryPoint: the cook file, describing how to build the project
+* boringFile: used by docker(cook) ?
 
 `.frozone.yml` has to be part of the repository of your project, as well as the files referenced by it!
 
