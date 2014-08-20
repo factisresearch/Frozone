@@ -14,12 +14,12 @@ import qualified Data.Text as T
 
 
 data BuildState
-   = BuildEnqueued
-   | BuildPreparing
-   | BuildStarted
+   = BuildEnqueued 
+   | BuildPreparing -- the BuildRepository is about to get built
+   | BuildStarted   -- the BuildRepository ist currently being built into an image
    | BuildFailed
-   | BuildSuccess
-   | BuildCanceled
+   | BuildSuccess   -- a docker image has successfully been built from the BuildRepository
+   | BuildCanceled 
    | BuildNeedsRecheck
    | BuildReviewStarted
    | BuildReviewRejected

@@ -126,7 +126,7 @@ restApi currentRoute buildQueue =
 
        userRoute GET [] currentRoute "/collection/:collectionId/patches" $ \route -> -- return collection patches
          withPatchCollectionSafe "collectionId" route $ \(collectionId,_) (_,user) ->
-            do patchList <- runSQL $ DB.selectList [PatchGroup ==. collectionId] [DB.Desc PatchId, DB.LimitTo 50]
+            do patchList <- runSQL $ DB.selectList [PatchPatchCollection ==. collectionId] [DB.Desc PatchId, DB.LimitTo 50]
                answerAndLog (Just $ userName user) "looking up collection patches" $
                  FrozoneGetCollectionPatches $ map DB.entityVal patchList
 

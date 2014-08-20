@@ -69,7 +69,7 @@ Patch json
      date UTCTime
      dependents [PatchId] --- > [Patch]
      bundle BundleDataId --- > [BundleData]
-     group PatchCollectionId --- > PatchCollection
+     patchCollection PatchCollectionId --- > PatchCollection
      UniquePatchVcsId vcsId
 
 BuildLog json

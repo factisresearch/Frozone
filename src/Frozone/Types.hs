@@ -28,7 +28,7 @@ type FrozoneQueueWorkerM a = ErrorT String (WebStateM Connection FrozoneSession 
 data FrozoneConfig
    = FrozoneConfig
    { fc_sqliteFile :: FilePath
-   , fc_storageDir :: FilePath
+   , fc_storageDir :: FilePath -- where to unpack patch bundles, ?, ...
    , fc_httpPort :: Int
    , fc_vcs :: String
    , fc_concurrentBuilds :: Int
