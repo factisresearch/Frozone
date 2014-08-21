@@ -5,8 +5,8 @@
 module Frozone.Server where
 
 import Frozone.Types
-import Frozone.BundleChecker
-import Frozone.RestApi
+import qualified Frozone.BundleChecker.API as Bundle
+import qualified Frozone.RestApi as Rest
 import Frozone.WebFrontend
 import Frozone.VCS
 import Frozone.Util.Logging
@@ -53,5 +53,5 @@ serverApp :: FrozoneApp ()
 serverApp =
     do middleware (staticPolicy (addBase "static"))
        get "/" indexPage
-       buildQueue <- subcomponent "" "/bundle" $ bundleApi -- :: FrozoneApp (WorkingQueue BuildRepositoryId)
-       subcomponent "" "/api" $ (flip restApi) buildQueue
+       buildQueue <- subcomponent "" "/bundle" $ Bundle.bundleApi -- :: FrozoneApp (WorkingQueue BuildRepositoryId)
+       subcomponent "" "/api" $ (flip Rest.restApi) buildQueue
