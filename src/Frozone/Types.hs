@@ -49,8 +49,6 @@ data FrozoneState
    , fs_vcs :: VCSApi
    }
 
-type FrozoneMessage = Either FrozoneError FrozoneResponse
-
 data FrozoneResponse
     = FrozoneCmdLogin
     | FrozoneCmdLogout
@@ -123,7 +121,6 @@ data ProjectInfo = ProjectInfo
 $(deriveJSON (jDrop 3) ''FrozoneConfig)
 $(deriveJSON (jDrop 0) ''FrozoneResponse)
 $(deriveJSON (jDrop 3) ''FrozoneSmtp)
-$(deriveJSON (jDrop 3) ''FrozoneMessage)
 $(deriveJSON (jDrop 3) ''FrozoneError)
 $(deriveJSON (jDrop 4) ''FrozoneRepoCreated)
 $(deriveJSON (jDrop 3) ''RepoConfig)

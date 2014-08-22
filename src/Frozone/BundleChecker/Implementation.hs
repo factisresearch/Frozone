@@ -46,9 +46,7 @@ import qualified Database.Persist as DB
 data NewBundleArrived
    = NewBundleArrived
    { _nba_proj :: (ProjectId, Project)
-   --{ _nba_repo :: String
    , _nba_user :: (UserId, User)
-   --, nba_email :: T.Text
    , _nba_patchBundle :: BS.ByteString
    , _nba_patchQueue :: WorkQueue BuildRepositoryId
    }
@@ -116,13 +114,12 @@ buildPatchBundle buildRepoId =
                 runSQL $
                        do updateBuildState buildRepoId BuildSuccess (T.pack msg)
                           DB.update buildRepoId [ BuildRepositoryDockerImage =. (Just imageName) ]
-                          sendNotifications buildRepoId
+                          sendNotifications (fc_mailConfig $ fs_config st) buildRepoId
                 return WorkComplete
          _ ->
              throwError "Cook build failed!"
     where
         loadRepoAndConfig :: WorkerErrM (BuildRepository, RepoConfig)
-        --loadRepoAndConfig :: ErrorT InternalError (WebStateM Connection FrozoneSession FrozoneState) (BuildRepository, RepoConfig)
         loadRepoAndConfig =
             do buildRepo <- lift (runSQL $ DB.get buildRepoId)
                  >>= maybeToErrorT "Repository vanished! Something is inconsistent here."
@@ -314,7 +311,8 @@ prepareForBuild vcs patchBundleBS (_,user) (projId,proj) patchQueue patch =
             else: sendNotifications
       -}
       enqueuePatch changes targetDir changeMap preApply =
-          do now <- liftIO getCurrentTime
+          do st <- getState
+             now <- liftIO getCurrentTime
              let changesHash =
                      T.decodeUtf8 $ B16.encode $ SHA1.hash changes
                  rp =
@@ -348,7 +346,7 @@ prepareForBuild vcs patchBundleBS (_,user) (projId,proj) patchQueue patch =
                     else runSQL $
                          do DB.update (entityKey repo) [ BuildRepositoryNotifyEmail =. nub (userEmail user : buildRepositoryNotifyEmail (entityVal repo)) ]
                             liftIO $ localLog "Nothing to do"
-                            sendNotifications (entityKey repo)
+                            sendNotifications (fc_mailConfig $ fs_config st) (entityKey repo)
       shouldRebuild buildState =
           case buildState of
             BuildCanceled -> True
@@ -362,8 +360,8 @@ prepareForBuild vcs patchBundleBS (_,user) (projId,proj) patchQueue patch =
     subject: repo and patch name
     message: build log of the patch
 -}
-sendNotifications :: BuildRepositoryId -> SqlPersistM ()
-sendNotifications buildRepoId =
+sendNotifications :: Maybe FrozoneSmtp -> BuildRepositoryId -> SqlPersistM ()
+sendNotifications mSmtp buildRepoId =
     do eitherRepoAndPatch <- runErrorT $
           do repo <-
                  lift (DB.get buildRepoId)
@@ -377,7 +375,7 @@ sendNotifications buildRepoId =
              let subj = subject repo patch
                  recv = buildRepositoryNotifyEmail repo
              doLog LogInfo ("Sending mail " ++ show subj ++ " to " ++ (T.unpack $ T.intercalate "," recv))
-             liftIO $ sendEmail emailFrom recv subj msg
+             liftIO $ sendEmail mSmtp emailFrom recv subj msg
     where
       subject repo patch =
           T.concat [ "[", prettyBuildState (buildRepositoryState repo), "] "
@@ -397,9 +395,8 @@ sendNotifications buildRepoId =
              return $ T.intercalate "\n\n" (map (mkLogBlock . entityVal) changeLog)
 
 {- |cancel all build repositories, currently enqueued or started -}
---closeDangelingActions :: (PersistMonadBackend m ~ SqlBackend, MonadIO m, PersistQuery m, MonadSqlPersist m) => m ()
-closeDangelingActions :: SqlPersistM ()
-closeDangelingActions =
+closeDangelingActions :: Maybe FrozoneSmtp -> SqlPersistM ()
+closeDangelingActions mSmtp =
     do liftIO (doLog LogInfo "Fixing dangeling actions...")
        dangelingBuilds <- DB.selectList ( [BuildRepositoryState ==. BuildEnqueued]
                                           ||. [BuildRepositoryState ==. BuildStarted]
@@ -408,7 +405,7 @@ closeDangelingActions =
     where
       closeDangeling build =
           do updateBuildState (entityKey build) BuildFailed "Dangeling after frozone restart"
-             sendNotifications (entityKey build)
+             sendNotifications mSmtp (entityKey build)
 
 withVCS :: (MonadIO m, MonadError String m) =>
      IO (VCSResponse a) -> (VCSResponse a -> m b) -> m b

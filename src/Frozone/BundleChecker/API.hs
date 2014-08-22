@@ -26,8 +26,8 @@ import Control.Monad.IO.Class
 
 bundleApi :: String -> FrozoneApp (WorkQueue BuildRepositoryId)
 bundleApi currentRoute =
-    do runSQL closeDangelingActions
-       st <- getState
+    do st <- getState
+       runSQL $ closeDangelingActions (fc_mailConfig $ fs_config st)
        let concurrentBuilds = fc_concurrentBuilds $ fs_config st
            bundleQueueLength = concurrentBuilds * 3
            patchQueueLenght = bundleQueueLength * 5
@@ -45,27 +45,29 @@ bundleApi currentRoute =
                 FrozoneCmdCheck
        return patchQueue
 
---startBundleWorker :: Int -> (NewBundleArrived -> IO WorkResult) -> FrozoneApp (WorkQueue NewBundleArrived)
+startBundleWorker :: Int -> (FrozoneQueueWorker NewBundleArrived) -> FrozoneApp (WorkQueue NewBundleArrived)
 startBundleWorker queueLength bundleHandler = 
-    newWorker
-      (WorkerConfig queueLength WorkerNoConcurrency)
-      bundleHandler $
-      ErrorHandlerIO $ \errorMsg newBundle ->
-        do doLog LogError $ "BundleWorker error: " ++ errorMsg
-           sendEmail emailFrom [userEmail $ snd $ _nba_user newBundle] "Bundle Error" (T.concat ["Build failed! \n\n ", T.pack errorMsg])
-           return WorkError
+    do st <- getState
+       newWorker
+         (WorkerConfig queueLength WorkerNoConcurrency)
+         bundleHandler $
+         ErrorHandlerIO $ \errorMsg newBundle ->
+           do doLog LogError $ "BundleWorker error: " ++ errorMsg
+              sendEmail (fc_mailConfig $ fs_config st) emailFrom [userEmail $ snd $ _nba_user newBundle] "Bundle Error" (T.concat ["Build failed! \n\n ", T.pack errorMsg])
+              return WorkError
 
---startPatchWorker :: Int -> Int -> (BuildRepositoryId -> IO WorkResult) -> FrozoneApp (WorkQueue BuildRepositoryId)
+startPatchWorker :: Int -> Int -> (FrozoneQueueWorker BuildRepositoryId) -> FrozoneApp (WorkQueue BuildRepositoryId)
 startPatchWorker queueLength concurrencyBound repoHandler =
-    newWorker
-      (WorkerConfig queueLength (WorkerConcurrentBounded concurrencyBound))
-      repoHandler $
-      ErrorHandlerSpock $ \errorMsg buildRepoId ->
-        do doLog LogError $ "Build in " ++ show buildRepoId ++ " failed: " ++ errorMsg
-           runSQL $
-                  do updateBuildState buildRepoId BuildFailed (T.pack errorMsg)
-                     sendNotifications buildRepoId
-           return WorkError
+    do st <- getState
+       newWorker
+         (WorkerConfig queueLength (WorkerConcurrentBounded concurrencyBound))
+         repoHandler $
+         ErrorHandlerSpock $ \errorMsg buildRepoId ->
+           do doLog LogError $ "Build in " ++ show buildRepoId ++ " failed: " ++ errorMsg
+              runSQL $
+                     do updateBuildState buildRepoId BuildFailed (T.pack errorMsg)
+                        sendNotifications (fc_mailConfig $ fs_config st) buildRepoId
+              return WorkError
 
 {- |* read patch bundle from http message
     * pack patch bundle into a "NewBundleArrived"
