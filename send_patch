@@ -1,0 +1,69 @@
+#!/bin/bash
+
+if [[ "$1" == "" || "$1" == "--help" || "$1" == "-h" ]]; then
+    echo "USAGE: $0 PROJECT"
+    exit 1
+fi
+
+
+PROJECT="$1"
+#REPO=$2
+#USERNAME=$1
+FROZONE_HOST="http://localhost:8080" # ADJUST THIS!
+PATCHFILE="/tmp/bundle-$RANDOM.dpatch"
+
+LOGIN_OK='{"tag":"FrozoneCmdLogin","contents":[]}'
+
+function login() {
+    curl --cookie-jar "cookie" --form "name=$USERNAME" --form "password=$PASSWORD" "$FROZONE_HOST/api/login" 2> /dev/null
+}
+
+function logout() {
+    curl --cookie "cookie" "$FROZONE_HOST/api/logout" 2> /dev/null
+}
+
+function finally() {
+    echo -en "\n"
+    rm "cookie"
+}
+
+
+set -e # stop script on first error
+trap 'finally' EXIT
+
+read -p "name: " USERNAME
+read -p "password: " -s PASSWORD
+
+LOGIN_ANS="$(login)"
+if [[ "$LOGIN_OK" != "$LOGIN_ANS" ]]; then
+    echo "login failed"
+    #echo "$LOGIN_ANS"
+    exit 1
+fi
+
+trap - EXIT ; trap 'logout && finally' EXIT
+
+# REMOTE-REPO <- SERVER
+jsonAnswer=$(curl --cookie "cookie" "$FROZONE_HOST/api/project?projShortName=$PROJECT" 2> /dev/null)
+#echo "answer:"
+#echo $jsonAnswer
+REPO=$(
+    echo $jsonAnswer \
+    | grep -Po '"repoLoc":.*?[^\\]"' 2> /dev/null \
+    | awk -F ":" '{ print $2 }' \
+)
+REPO="${REPO%\"}"
+REPO="${REPO#\"}"
+echo "location of the remote repo:"
+echo $REPO
+
+darcs send $REPO -o $PATCHFILE &&
+
+echo "Uploading patches ($PATCHFILE) to $FROZONE_HOST ..." &&
+curl --cookie "cookie" --form "projShortName=$PROJECT" --form "patch-bundle=@$PATCHFILE" "$FROZONE_HOST/bundle/check"
+#curl --cookie "cookie" --data '' --upload-file "$PATCHFILE" "$FROZONE_HOST/bundle/check"
+
+
+trap - EXIT
+logout && finally
+exit 0

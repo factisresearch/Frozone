@@ -38,7 +38,7 @@ data VCSPatch
    , vp_name :: T.Text
    , vp_author :: T.Text
    , vp_date :: UTCTime
-   , vp_dependents :: [VCSPatchId]
+   , vp_dependents :: [VCSPatchId] -- dependencies
    } deriving (Show, Read, Eq)
 
 data VCSResponse a
@@ -51,11 +51,12 @@ data VCSResponse a
 
 data VCSApi
    = VCSApi
-   { vcs_patchesFromBundle :: VCSRepository -> VCSPatchBundle -> IO (VCSResponse [VCSPatch])
+   { vcs_patchesFromBundle :: VCSRepository -> VCSPatchBundle -> IO (VCSResponse [VCSPatch]) -- ^
    , vcs_changedFiles :: VCSPatchId -> VCSPatchBundle -> IO (VCSResponse FileChangeMap)
-   , vcs_cloneRepository :: VCSSource -> VCSRepository -> IO (VCSResponse ())
+   , vcs_cloneRepository :: VCSSource -> VCSRepository -> IO (VCSResponse ()) -- ^makes a local copy of a repository
+   -- , vcs_pushRepository :: VCSRepository -> VCSSource -> IO (VCSResponse ())
    , vcs_applyPatch :: VCSPatchId -> VCSPatchBundle -> VCSRepository -> IO (VCSResponse ())
-   , vcs_changeLog :: VCSRepository -> IO (VCSResponse ())
+   , vcs_changeLog :: VCSRepository -> IO (VCSResponse ()) -- read vcs log
    }
 
 runVCS :: FilePath -> [String] -> String -> (BS.ByteString -> a) -> IO (VCSResponse a)
