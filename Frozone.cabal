@@ -44,6 +44,7 @@ executable Frozone
                        random >=1.0 && <1.1,
                        resourcet >=0.3 && <1.2,
                        safe >=0.3 && <0.4,
+                       smtp-mail >=0.1 && <0.2,
                        stm >=2.4 && <2.5,
                        transformers >=0.3 && <0.4,
                        temporary >=1.2 && <1.3,

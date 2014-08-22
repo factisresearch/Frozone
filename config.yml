@@ -3,3 +3,8 @@ storageDir: scratch/storage
 httpPort: 8080
 vcs: darcs
 concurrentBuilds: 8
+mailConfig:
+    host: mail
+    port: 25
+    user: foo
+    password: bar

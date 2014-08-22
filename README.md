@@ -7,21 +7,30 @@ We're building Frozone to replace our Jenkins Continuous Integration system.  Fr
 
 Using docker the developers can fully describe the system needed to run a program including the distribution (Ubuntu 14.04), packages that need to be installed (apt-get install nodejs), the libraries that are required (npm install bloomfilter) and all needed configuration.  Even though a clean build of the complete system might take an hour Frozone will be able to give feedback about your changes much faster by using an intelligent cache that depends on the build description.  For our project we're aiming to get feedback for most cases in less than 2 minutes.
 
-Frozone is far from aplha quality and heavily under development.  This is a description of what it will look like when we reach alpha quality.  We're fast coders so stay tuned!
+Frozone is far from alpha quality and heavily under development.  This is a description of what it will look like when we reach alpha quality.  We're fast coders so stay tuned!
 
 # Install
 
 * From Source:
+Check the Dockerfile located at ./docker/Dockerfile
+
+* Docker:
 ```bash
-npm install -g react-tools
 git clone https://github.com/factisresearch/Frozone.git
 cd Frozone
-./build-helper.sh
-cabal update
-cabal sandbox init
-cd darcs-2.8.5 && cabal install
-cabal install --only-dependencies
-./build-run
+docker build --rm -t [your_name_here]/frozone docker
+```
+
+# Run
+
+* Docker
+```bash
+docker run -v /var/run/docker.sock:/var/run/docker.sock -v $(which docker):$(which docker) -d -p 8080:8080 [your_name_here]/frozone
+```
+
+* Without docker
+```bash
+./Frozone [config_file]
 ```
 
 # Usage
@@ -51,8 +60,5 @@ Send patches to Frozone by calling this script.
 
 # Todo
 
-* Better README
-* Usage examples
 * Continous deployment
-* Dockerize
 * Hooks (Post-success, etc.)
