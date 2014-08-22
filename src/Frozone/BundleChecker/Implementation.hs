@@ -67,8 +67,7 @@ newBundleArrived (NewBundleArrived (projId,proj) (userId,user) patchBundleBS pat
        let
            storageDir = fc_storageDir $ fs_config st
            vcs = fs_vcs st
-       -- TODO: include project into hash
-           bundleHash = T.decodeUtf8 $ B16.encode $ SHA1.hash patchBundleBS
+           bundleHash = T.decodeUtf8 $ B16.encode $ SHA1.hash $ (patchBundleBS `BS.append` T.encodeUtf8 (projectShortName proj))
            localLog :: forall m. MonadIO m => String -> m ()
            localLog m = doLog LogInfo $ "[Bundle:" ++ T.unpack bundleHash ++ "] " ++ m
 
