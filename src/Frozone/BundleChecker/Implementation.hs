@@ -56,7 +56,6 @@ type WorkerErrM a = ErrorT String (WebStateM Connection FrozoneSession FrozoneSt
 emailFrom :: T.Text
 emailFrom = "Frozone <thiemann@cp-med.com>" 
 
-
 {- |* split patch bundle, 
     * create a build repository for each patch
     * add them to the patchQueue
@@ -68,13 +67,13 @@ newBundleArrived (NewBundleArrived (projId,proj) (userId,user) patchBundleBS pat
            storageDir = fc_storageDir $ fs_config st
            vcs = fs_vcs st
            bundleHash = T.decodeUtf8 $ B16.encode $ SHA1.hash $ (patchBundleBS `BS.append` T.encodeUtf8 (projectShortName proj))
-           localLog :: forall m. MonadIO m => String -> m ()
-           localLog m = doLog LogInfo $ "[Bundle:" ++ T.unpack bundleHash ++ "] " ++ m
+           doLogWithBundleHash :: forall m. MonadIO m => String -> m ()
+           doLogWithBundleHash m = doLog LogInfo $ "[Bundle:" ++ T.unpack bundleHash ++ "] " ++ m
 
            repoPath = storageDir </> (T.unpack bundleHash)
            bundlePath = repoPath ++ ".dpatch"
-       localLog $ "Bundle arrived. Sent by " ++ T.unpack (userName user) ++ " for " ++ T.unpack (projectName proj)
-       bundleId <- getPatchBundle (projId,proj) localLog repoPath bundlePath patchBundleBS bundleHash
+       doLogWithBundleHash $ "Bundle arrived. Sent by " ++ T.unpack (userName user) ++ " for " ++ T.unpack (projectName proj)
+       bundleId <- getPatchBundle (projId,proj) doLogWithBundleHash repoPath bundlePath patchBundleBS bundleHash
        patchBundles <- runSQL $ DB.selectList [ PatchBundle ==. bundleId ] []
        mapM_ (prepareForBuild vcs patchBundleBS (userId,user) (projId,proj) patchQueue) patchBundles
        return WorkComplete
@@ -141,8 +140,8 @@ getPatchBundle
     -> [Char]
     -> BSC.ByteString
     -> T.Text
-    -> WorkerErrM (KeyBackend SqlBackend (BundleDataGeneric SqlBackend))
-getPatchBundle (projId,proj) localLog projectRepoCopyPath bundlePath patchBundleBS bundleHash =
+    -> WorkerErrM BundleDataId
+getPatchBundle (projId,proj) doLogWithBundleHash projectRepoCopyPath bundlePath patchBundleBS bundleHash =
        -- lookup if patch already exists:
     do st <- getState
        let
@@ -150,18 +149,18 @@ getPatchBundle (projId,proj) localLog projectRepoCopyPath bundlePath patchBundle
        mBundle <- runSQL $ DB.getBy (UniqueBundleHash bundleHash)
        case mBundle of
          Nothing ->
-             do localLog "Bundle unknown. Inserting into database!"
+             do doLogWithBundleHash "Bundle unknown. Inserting into database!"
                 now <- liftIO getCurrentTime
                 -- write new bundle to disk
                 liftIO $ BS.writeFile bundlePath patchBundleBS
                 -- patch bundle -> db
                 bundleId <- runSQL $ DB.insert (BundleData bundleHash bundlePath now)
 
-                localLog $ "Pulling from " ++ T.unpack (projectRepoLoc proj)
+                doLogWithBundleHash $ "Pulling from " ++ T.unpack (projectRepoLoc proj)
                 rawPatches <- -- :: [VCSPatch]
                     -- clone project repo to 'projectRepoCopyPath'
                     withVCS ((vcs_cloneRepository vcs) (VCSSource $ T.unpack $ projectRepoLoc proj) (VCSRepository projectRepoCopyPath)) $ \_ ->
-                        do localLog "Getting the patches out of the bundle"
+                        do doLogWithBundleHash "Getting the patches out of the bundle"
                            -- return all patches in the patch bundle, which are not yet part of the project repository
                            withVCS ((vcs_patchesFromBundle vcs) (VCSRepository projectRepoCopyPath) (VCSPatchBundle patchBundleBS)) $ \r ->
                                return $ fromMaybe [] (vcs_data r)
@@ -181,12 +180,12 @@ getPatchBundle (projId,proj) localLog projectRepoCopyPath bundlePath patchBundle
                         )
                     dbPatchesNoDeps = map mkDbPatch rawPatches -- :: [(VCSPatchId, T.Text, PatchCollectionId -> Patch)]
                 -- update database from the new patches, return their ids:
-                patchMap <- mapM (writePatchIfNotExists localLog (projId,proj)) dbPatchesNoDeps -- :: m [(VCSPatchId, PatchId)]
+                patchMap <- mapM (writePatchIfNotExists doLogWithBundleHash (projId,proj)) dbPatchesNoDeps -- :: m [(VCSPatchId, PatchId)]
                 -- correct dependencies into database
                 mapM_ (applyDeps patchMap) rawPatches
                 return bundleId
          Just bundle ->
-             do localLog "Bundle already known!"
+             do doLogWithBundleHash "Bundle already known!"
                 return $ entityKey bundle
     where
       {- | update dependencies in the database -}
@@ -205,26 +204,26 @@ writePatchIfNotExists
     :: (String -> WorkerErrM ()) -> (ProjectId,Project)
     -> (VCSPatchId, T.Text, PatchCollectionId -> Patch)
     -> WorkerErrM (VCSPatchId, PatchId)
-writePatchIfNotExists localLog projKV (vcsId, localPatchName, rawPatch) =
+writePatchIfNotExists doLogWithBundleHash projKV (vcsId, localPatchName, rawPatch) =
       do let dbId = T.decodeUtf8 $ unVCSPatchId vcsId
          mPatch <- runSQL $ DB.getBy (UniquePatchVcsId dbId)
          case mPatch of
            Just p ->
-               do _ <- localLog $ "Patch " ++ (show localPatchName) ++ " already known!"
+               do _ <- doLogWithBundleHash $ "Patch " ++ (show localPatchName) ++ " already known!"
                   return (vcsId, entityKey p)
            Nothing ->
-               do _ <- localLog $ "Patch " ++ (show localPatchName) ++ " is new."
-                  groupId <- createPatchCollectionIfNotExists localLog projKV localPatchName
+               do _ <- doLogWithBundleHash $ "Patch " ++ (show localPatchName) ++ " is new."
+                  groupId <- createPatchCollectionIfNotExists doLogWithBundleHash projKV localPatchName
                   patchId <- runSQL $ DB.insert (rawPatch groupId)
                   return (vcsId, patchId)
 
-createPatchCollectionIfNotExists localLog (projId, _) patchCollName =
+createPatchCollectionIfNotExists doLogWithBundleHash (projId, _) patchCollName =
       do groups <- runSQL $ DB.selectList [ PatchCollectionName ==. patchCollName, PatchCollectionOpen ==. True ] []
          case groups of
            (group : _) ->
                return $ entityKey group
            [] ->
-               do _ <- localLog $ "Creating new PatchCollection " ++ show patchCollName
+               do _ <- doLogWithBundleHash $ "Creating new PatchCollection " ++ show patchCollName
                   runSQL $ DB.insert (PatchCollection patchCollName projId True)
 
 
@@ -286,7 +285,7 @@ prepareForBuild vcs patchBundleBS (_,user) (projId,proj) patchQueue patch =
     do st <- getState
        targetIdent <- liftIO $ randomB16Ident 10
        let targetDir = (fc_storageDir $ fs_config st) </> targetIdent
-       localLog $ "Will clone " ++ T.unpack branch ++ " into " ++ targetDir
+       doLogWithBundleHash $ "Will clone " ++ T.unpack branch ++ " into " ++ targetDir
        -- clone branch to <storage>/<random>
        withVCS ((vcs_cloneRepository vcs) (VCSSource $ T.unpack branch) (VCSRepository targetDir)) $ \_ ->
            withVCS ((vcs_changedFiles vcs) vcsId bundle) $ \r1 ->
@@ -294,12 +293,12 @@ prepareForBuild vcs patchBundleBS (_,user) (projId,proj) patchQueue patch =
                   preApply <- liftIO $ loadChangeInfo changeMap targetDir preApplyContent
                   -- apply patch to <storage>/<random>
                   withVCS ((vcs_applyPatch vcs) vcsId bundle (VCSRepository targetDir)) $ \_ ->
-                      do localLog "Patches applied!"
+                      do doLogWithBundleHash "Patches applied!"
                          withVCS ((vcs_changeLog $ fs_vcs st) (VCSRepository targetDir)) $ \r2 ->
                              enqueuePatch (vcs_stdOut r2) targetDir changeMap preApply
     where
-      localLog :: forall m. MonadIO m => String -> m ()
-      localLog m = doLog LogInfo $ "[Patch:" ++ (T.unpack $ patchName $ entityVal patch) ++ "] " ++ m
+      doLogWithBundleHash :: forall m. MonadIO m => String -> m ()
+      doLogWithBundleHash m = doLog LogInfo $ "[Patch:" ++ (T.unpack $ patchName $ entityVal patch) ++ "] " ++ m
       vcsId = VCSPatchId $ T.encodeUtf8 $ patchVcsId (entityVal patch)
       bundle = VCSPatchBundle patchBundleBS
 
@@ -332,7 +331,7 @@ prepareForBuild vcs patchBundleBS (_,user) (projId,proj) patchQueue patch =
                     do postApply <- liftIO $ loadChangeInfo changeMap targetDir postApplyContent
                        buildId <- runSQL $ DB.insert rp
                        _ <- runSQL $ DB.insertMany (generateBundleChanges buildId preApply postApply)
-                       localLog "Ready to build!"
+                       doLogWithBundleHash "Ready to build!"
                        addWork WorkNow buildId patchQueue
                Just repo ->
                     if shouldRebuild (buildRepositoryState $ entityVal repo)
@@ -340,11 +339,11 @@ prepareForBuild vcs patchBundleBS (_,user) (projId,proj) patchQueue patch =
                                                                 , BuildRepositoryState =. BuildEnqueued
                                                                 , BuildRepositoryDockerImage =. Nothing
                                                                 ]
-                            localLog "Ready to rebuild!"
+                            doLogWithBundleHash "Ready to rebuild!"
                             addWork WorkNow (entityKey repo) patchQueue
                     else runSQL $
                          do DB.update (entityKey repo) [ BuildRepositoryNotifyEmail =. nub (userEmail user : buildRepositoryNotifyEmail (entityVal repo)) ]
-                            liftIO $ localLog "Nothing to do"
+                            liftIO $ doLogWithBundleHash "Nothing to do"
                             sendNotifications (fc_mailConfig $ fs_config st) (entityKey repo)
       shouldRebuild buildState =
           case buildState of
