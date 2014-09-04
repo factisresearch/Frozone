@@ -5,6 +5,9 @@
 module Frozone.Server where
 
 import Frozone.Types
+import Frozone.Model
+import Frozone.Persist
+{-
 import qualified Frozone.BundleChecker.API as Bundle
 import qualified Frozone.RestApi as Rest
 import Frozone.WebFrontend
@@ -22,9 +25,12 @@ import Web.Spock hiding( subcomponent )
 import Web.Spock.Auth
 import Control.Monad.Trans.Resource
 import qualified Data.Text as T
+-}
 
-runServer :: FrozoneConfig -> IO ()
-runServer fc =
+
+
+
+{-
     do pool <- createSqlitePool (T.pack $ fc_sqliteFile fc) 5
        runResourceT $ runNoLoggingT $ (flip runSqlPool) pool $
           runMigration migrateCore
@@ -47,11 +53,14 @@ runServer fc =
             , ac_emptySession = () }
         {-sessCfg =
           SessionCfg "FrozoneCookie" 3600 40 ()-}
+-}
 
 
+{-
 serverApp :: FrozoneApp ()
 serverApp =
     do middleware (staticPolicy (addBase "static"))
        get "/" indexPage
        buildQueue <- subcomponent "" "/bundle" $ Bundle.bundleApi -- :: FrozoneApp (WorkingQueue BuildRepositoryId)
        subcomponent "" "/api" $ (flip Rest.restApi) buildQueue
+-}

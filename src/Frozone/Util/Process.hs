@@ -5,11 +5,23 @@ module Frozone.Util.Process where
 
 import Frozone.Util.Logging
 
-import Control.Monad.Trans
+--import Control.Monad.Trans
 import Data.List (intercalate)
 import System.Exit
 import System.Process
 
+runProc :: (String -> IO ()) -> String -> [String] -> IO (ExitCode, String, String)
+runProc logFunction p args =
+    do logFunction (p ++ " " ++ (intercalate " " args))
+       d@(ec, stdout, stderr) <- readProcessWithExitCode p args ""
+       case ec of
+         ExitSuccess ->
+             doLog LogTrace stdout
+         ExitFailure _ ->
+             doLog LogError stderr
+       return d
+
+{-
 runProc :: String -> [String] -> IO (ExitCode, String, String)
 runProc p args =
     do doLog LogNote (p ++ " " ++ (intercalate " " args))
@@ -30,3 +42,4 @@ withProgResult p errHandler cmd onSuccess =
              onSuccess resp
          ExitFailure _ ->
              errHandler stderr
+-}

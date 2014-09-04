@@ -1,13 +1,22 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Frozone.Types
-  ( module Frozone.Types
-  , module Frozone.Model) where
+module Frozone.BuildTypes where
 
+import System.FilePath
+
+data MicroBranchInfo = MicroBranchInfo
+    deriving (Show)
+
+data TarFile = TarFile { fromTarFile :: FilePath }
+    deriving (Show)
+
+data PatchBundle = PatchBundle
+    deriving (Show)
+
+{-
 import Frozone.Model
 
 import Frozone.VCS
-import Frozone.Util.Json
 
 import Database.Persist.Sql
 import Control.Monad.Trans.Error
@@ -126,3 +135,4 @@ $(deriveJSON (jDrop 4) ''FrozoneRepoCreated)
 $(deriveJSON (jDrop 3) ''RepoConfig)
 $(deriveJSON (jDrop 4) ''UserInfo)
 $(deriveJSON (jDrop 3) ''ProjectInfo)
+-}

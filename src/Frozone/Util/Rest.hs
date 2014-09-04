@@ -2,6 +2,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Frozone.Util.Rest where
 
+{-
+
 import Frozone.User.DB
 import Frozone.Types
 
@@ -245,3 +247,4 @@ userRoute stdMeth userRights routeToPrepend route f =
 
 uncurry3 f (a,b,c) = f a b c
 uncurry4 f (a,b,c,d) = f a b c d
+-}
