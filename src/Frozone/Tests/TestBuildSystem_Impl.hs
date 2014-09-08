@@ -9,23 +9,17 @@ import Frozone.BuildSystem.Intern.Model -- is this really necessary?
 import Frozone.BuildTypes
 
 import Frozone.Util.Testing
-import Frozone.Util.Process
 import Frozone.Util.Logging
 import Frozone.Util.Concurrency
 
 import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Archive.Tar.Entry as Tar
 
--- import Control.Concurrent
 import Control.Monad.Error
 import Control.Exception
-import Frozone.Util.ErrorHandling
 
-import Control.Monad.STM
-import Control.Concurrent.STM.TVar
 import System.Directory
 import System.FilePath
-import System.Posix.Files
 import qualified Data.ByteString.Lazy as BS
 
 import Test.Framework
@@ -35,91 +29,74 @@ import Test.Framework
 test_add  :: IO ()
 test_add = 
     withConfig $ \config ->
-        do bs <- startBuildSystem
+        do bs <- startBuildSystem config
+           let impl = buildSysImpl bs
            --clearBuildSystem bs
 
            fakeIncomingTar False (bsc_incoming config) "test.tar"
-           _ <- assertError $ getBuildRepositoryState config bs $ BuildId 0
+           _ <- assertError $ bs_getBuildRepositoryState impl $ BuildId 0
 
-           _ <- assertNoError $ addBuild config bs (BuildId 0) (TarFile "test.tar")
-           state <- (assertNoError $ getBuildRepositoryState config bs $ BuildId 0)
+           _ <- assertNoError $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
+           state <- (assertNoError $ bs_getBuildRepositoryState impl $ BuildId 0)
            when (not $ state `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
 
            waitRes <- assertNoError $
-               awaitStateCond 2000 (\st -> st `elem` [BuildSuccess,BuildFailed]) (BuildId 0) bs
+               awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId 0) (buildSysRef_refModel bs)
            assertEqual StateReached waitRes
 
-           --_ <- ((return . assertEqual StateReached) =<<) $ 
-           --_ <- assertNoError $ stopBuild config bs (BuildId 0)
-           return ()
-
-test_stop :: IO ()
-test_stop =
-    withConfig $ \config ->
-        do bs <- startBuildSystem
-           clearBuildSystem bs
-
-           fakeIncomingTar False (bsc_incoming config) "0.tar"
-           _ <- assertNoError $ addBuild config bs (BuildId 0) (TarFile "0.tar")
-           state <- assertNoError $ getBuildRepositoryState config bs (BuildId 0) 
-           when (not $ state `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $
-               fail "added build, but it is still in the wrong state!"
-
-        --awaitStateCond 1010 (==BuildFailed) (BuildId 1) bs
-           _ <- assertNoError $ stopBuild config bs (BuildId 0)
-           state <- assertNoError $ getBuildRepositoryState config bs (BuildId 0)
-           assertEqual BuildStopped $ state
-
+           assertNoError $ stopBuildSystem bs
            return ()
 
 test_build :: IO ()
 test_build =
     withConfig $ \config ->
-        do bs <- startBuildSystem
-           clearBuildSystem bs
+        do bs <- startBuildSystem config
+           let impl = buildSysImpl bs
 
            doLog LogInfo $ "starting build 0..."
-           -- building this repository should work:
-           fakeIncomingTar False (bsc_incoming config) "0.tar"
-           _ <- assertNoError $ addBuild config bs (BuildId 0) (TarFile "0.tar")
-           state_0 <- assertNoError $ getBuildRepositoryState config bs (BuildId 0) 
+           -- building this repository should FAIL:
+           fakeIncomingTar True (bsc_incoming config) "0.tar"
+           _ <- assertNoError $ bs_addBuild impl (BuildId 0) (TarFile "0.tar")
+           state_0 <- assertNoError $ bs_getBuildRepositoryState impl (BuildId 0) 
            when (not $ state_0 `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
 
            doLog LogInfo $ "wait for build 0..."
-           waitRes <- assertNoError $ awaitStateCond 1500 (==BuildSuccess) (BuildId 0) bs
+           waitRes <- assertNoError $
+               awaitBuildRepoMaxTime 1500 ((==BuildFailed) . br_buildState) (BuildId 0) (buildSysRef_refModel bs)
            assertEqual StateReached waitRes
 
            doLog LogInfo $ "starting build 1..."
-           -- building this repository should FAIL:
-           fakeIncomingTar True (bsc_incoming config) "1.tar"
-           _ <- assertNoError $ addBuild config bs (BuildId 1) (TarFile "1.tar")
-           state_1 <- assertNoError $ getBuildRepositoryState config bs (BuildId 1) 
+           -- building this repository should work:
+           fakeIncomingTar False (bsc_incoming config) "1.tar"
+           _ <- assertNoError $ bs_addBuild impl (BuildId 1) (TarFile "1.tar")
+           state_1 <- assertNoError $ bs_getBuildRepositoryState impl (BuildId 1) 
            when (not $ state_1 `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
 
            doLog LogInfo $ "wait for build 1..."
-           waitRes <- assertNoError $ awaitStateCond 1500 (==BuildFailed) (BuildId 1) bs
-           assertEqual StateReached waitRes
+           waitRes2 <- assertNoError $
+               awaitBuildRepoMaxTime 1500 ((==BuildSuccess) . br_buildState) (BuildId 1) (buildSysRef_refModel bs)
+           assertEqual StateReached waitRes2
 
+           assertNoError $ stopBuildSystem bs
            return ()
-
 
 test_concurrentBuilds :: IO ()
 test_concurrentBuilds =
     withConfig $ \config ->
-        do bs <- startBuildSystem
-           clearBuildSystem bs
+        do bs <- startBuildSystem config
+           let impl = buildSysImpl bs
 
            fakeIncomingTar False (bsc_incoming config) "0.tar"
-           _ <- assertNoError $ addBuild config bs (BuildId 0) (TarFile "0.tar")
+           _ <- assertNoError $ bs_addBuild impl (BuildId 0) (TarFile "0.tar")
            fakeIncomingTar False (bsc_incoming config) "1.tar"
-           _ <- assertNoError $ addBuild config bs (BuildId 1) (TarFile "1.tar")
+           _ <- assertNoError $ bs_addBuild impl (BuildId 1) (TarFile "1.tar")
            fakeIncomingTar False (bsc_incoming config) "2.tar"
-           _ <- assertNoError $ addBuild config bs (BuildId 2) (TarFile "2.tar")
+           _ <- assertNoError $ bs_addBuild impl (BuildId 2) (TarFile "2.tar")
 
-           waitRes <- assertNoError $ awaitOrErr 2000 cond bs
+           waitRes <- assertNoError $ awaitMaxTimeOrErr 2000 cond (buildSysRef_refModel bs)
            assertEqual StateReached $ waitRes
     where
         cond :: Monad m => BuildSystemState -> ErrorT ErrMsg m Bool

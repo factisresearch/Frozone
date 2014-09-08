@@ -2,14 +2,13 @@
 module Main where
 
 import Frozone.Util.ErrorHandling
-import Frozone.Model
+--import Frozone.Model
 import qualified Frozone.PkgManConnection as PkgManConn
 import qualified Frozone.Persist as Persist
 import qualified Frozone.Controller as Controller
 
 import System.Environment
 import qualified Data.Yaml as YML
-import Control.Monad
 
 import Frozone.Util.Json
 
@@ -61,7 +60,7 @@ usageStr = "Usage: ./Frozone [cfgFile]"
 
 
 
-controllerStateFromFrozoneState st = Controller.ControllerState
+controllerStateFromFrozoneState _ = Controller.ControllerState
 
 data FrozoneConfig
     = FrozoneConfig

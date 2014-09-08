@@ -9,4 +9,3 @@ data PackageManager
     , pkgMan_getBuildRepository :: IO TarFile
     , pkgMan_addPatchBundle :: PatchBundle -> IO ()
     }
-

@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Frozone.BuildTypes where
 
-import System.FilePath
+--import System.FilePath
 
 data MicroBranchInfo = MicroBranchInfo
     deriving (Show)

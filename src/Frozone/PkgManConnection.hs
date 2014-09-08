@@ -18,13 +18,13 @@ data ConnectionInfo
 data Connection = Connection
 
 connect :: ConnectionInfo -> IO Connection
-connect connInfo = undefined
+connect _ = undefined
 
 disconnect :: Connection -> IO ()
-disconnect conn = undefined
+disconnect _ = undefined
 
-addPatchBundle conn = undefined
+addPatchBundle _ = undefined
 
-listMicroBranches conn = undefined
+listMicroBranches _ = undefined
 
-getBuildRepository conn = undefined
+getBuildRepository _ = undefined

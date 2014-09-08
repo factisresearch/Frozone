@@ -1,45 +1,28 @@
 module Frozone.BuildSystem.Intern.Model where
 
---import Frozone.BuildSystem.Types
 import Frozone.BuildSystem.API
+import qualified Frozone.BuildSystem.Scheduling as Sched
 
 import qualified Data.Map.Strict as M
 
 import Control.Monad
 import Control.Monad.Error
 import Frozone.Util.ErrorHandling
-import Control.Concurrent
+--import Control.Concurrent
+
 
 
 data BuildSystemState
     = BuildSystemState
     { buildSysSt_allBuilds :: M.Map BuildId BuildRepository
-    -- these two fields are needed to ensure that bs_stopBuild (/bs_archiveBuild) can stop (/archivate) builds, in whatever state they are
-    , buildSysSt_expectedToStop :: [BuildId]
-    , buildSysSt_expectedToArchive :: [BuildId]
     }
   deriving (Show, Eq)
-
-{-
-data SchedulerState
-    = SchedulerState
-    { schedState_queue :: [
-    , schedState_expectedToStop :: [BuildId]
-    , schedState_expectedToArchive :: [BuildId]
-    }
-
-data Task
-    = Task
-    { task_buildId :: BuildId
-    , task_tarFile :: TarFile
-    }
--}
 
 data BuildRepository
     = BuildRepository
     { br_path :: Maybe FilePath -- relative to bsc_baseDir (!)
     , br_buildState :: BuildState
-    , br_thread :: Maybe ThreadId
+    , br_thread :: Maybe Sched.JobId
     }
   deriving (Show, Eq)
 
@@ -47,8 +30,6 @@ data BuildRepository
 emptyBuildSystemState =
     BuildSystemState
     { buildSysSt_allBuilds = M.empty
-    , buildSysSt_expectedToStop = []
-    , buildSysSt_expectedToArchive = []
     }
 
 buildRepository mPath buildState =
@@ -84,8 +65,6 @@ getBuildRepository buildId buildSystem =
 
 -- map over buildSysSt_allBuilds
 mapToAllBuilds f buildSysStData = buildSysStData{ buildSysSt_allBuilds = f (buildSysSt_allBuilds buildSysStData) }
-mapToExpectedToStop f buildSysStData = buildSysStData{ buildSysSt_expectedToStop = f (buildSysSt_expectedToStop buildSysStData) }
-mapToExpectedToArchive f buildSysStData = buildSysStData{ buildSysSt_expectedToArchive = f (buildSysSt_expectedToArchive buildSysStData) }
 -- map over br_state
 mapToPath f buildRepo = buildRepo{ br_path = f (br_path buildRepo) }
 mapToBuildState f buildRepo = buildRepo{ br_buildState = f (br_buildState buildRepo) }

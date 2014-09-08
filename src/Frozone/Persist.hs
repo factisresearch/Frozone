@@ -19,7 +19,7 @@ instance Persistable Model.UserManagementData where
     read = putStrLn "not yet implemented!" >> return Model.emptyFrozone
 
     --write :: Model -> IO ()
-    write model = putStrLn "not yet implemented!"
+    write _ = putStrLn "not yet implemented!"
 
 {-
 data Persist

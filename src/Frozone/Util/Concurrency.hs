@@ -1,7 +1,7 @@
 {-# LANGUAGE Rank2Types #-}
 module Frozone.Util.Concurrency(
     AwaitRes(..), TimeMs,
-    await, awaitOrErr
+    await, awaitMaxTime, awaitMaxTimeOrErr
 ) where
 
 import Frozone.Util.ErrorHandling
@@ -19,8 +19,8 @@ data AwaitRes
 
 type TimeMs = Int
 
-awaitOrErr :: Error err => TimeMs -> (forall m . Monad m => a -> ErrorT err m Bool) -> TVar a -> ErrorT err IO AwaitRes
-awaitOrErr maxTime cond ref =
+awaitMaxTimeOrErr :: Error err => TimeMs -> (forall m . Monad m => a -> ErrorT err m Bool) -> TVar a -> ErrorT err IO AwaitRes
+awaitMaxTimeOrErr maxTime cond ref =
     do timeOutVar <- lift $ atomically $ newTVar $ False
        lift $ forkIO $ threadDelay (maxTime * ms) >> atomically (writeTVar timeOutVar True)
        ErrorT $ atomically $
@@ -35,8 +35,8 @@ awaitOrErr maxTime cond ref =
                               then return $ Right $ TimeOut
                               else retry
 
-await :: TimeMs -> (a -> Bool) -> TVar a -> IO AwaitRes
-await maxTime cond ref =
+awaitMaxTime :: TimeMs -> (a -> Bool) -> TVar a -> IO AwaitRes
+awaitMaxTime maxTime cond ref =
     do timeOutVar <- atomically $ newTVar $ False
        forkIO $ threadDelay (maxTime * ms) >> atomically (writeTVar timeOutVar True)
        atomically $
@@ -48,6 +48,22 @@ await maxTime cond ref =
                         if isTimeOut
                           then return $ TimeOut
                           else retry
+
+{-
+awaitOrErr :: (a -> Bool) -> TVar a -> STM ()
+awaitOrErr cond ref =
+    do var <- readTVar ref
+       if cond var 
+         then return () 
+         else retry
+-}
+
+await :: (a -> Bool) -> TVar a -> STM ()
+await cond ref =
+    do var <- readTVar ref
+       if cond var 
+         then return () 
+         else retry
 
 ms = 1000
 
