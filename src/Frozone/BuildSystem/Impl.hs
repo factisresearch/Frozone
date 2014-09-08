@@ -79,7 +79,8 @@ stopBuildSystem ref =
 
 addBuild :: BuildSystemRef -> BuildId -> TarFile -> ErrorT ErrMsg IO ()
 addBuild BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_sched = refSched } buildRepoId tarFile = 
-    do addRepoOrError <- liftIO $ atomically $ 
+    do logBuild buildRepoId LogInfo $ "addBuild called"
+       addRepoOrError <- liftIO $ atomically $ 
            do model <- readTVar refModel
               eitherNewModel <- (runErrorT $ addBuildRepository buildRepoId newRep model)
               case eitherNewModel of
@@ -107,9 +108,10 @@ getBuildQueue = undefined
 
 stopBuild :: BuildSystemRef -> BuildId -> ErrorT ErrMsg IO ()
 stopBuild BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_sched = refSched, buildSysRef_config = config } buildRepoId =
-    do let remAction' = runErrorT (remAction refSched buildRepoId) :: ThreadMonadT (ErrT IO) (Either ErrMsg ())
-       errOrUnity <- evalThreadMonadTWithTVar (remAction') config refModel toIO
-       case errOrUnity of
+    do logBuild buildRepoId LogInfo $ "stopBuild called"
+       let remAction' = runErrorT (remAction refSched buildRepoId) :: ThreadMonadT (ErrT IO) (Either ErrMsg ())
+       errOrUnit <- evalThreadMonadTWithTVar (remAction') config refModel toIO
+       case errOrUnit of
          Left err -> throwError err
          _ -> return ()
     where

@@ -11,20 +11,20 @@ import Frozone.BuildSystem.Intern.Model
 
 
 test_AddBuildRepository =
-    do assertNoError $ addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing) emptyBuildSystemState
+    do assertSUCCESS $ addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing) emptyBuildSystemState
 
 test_AddBuildRepositoryTwice =
-    assertError $
+    assertERROR $
         addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing) 
         =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing) emptyBuildSystemState
 
 test_DeleteBuildRepository =
-    assertError $
+    assertERROR $
         deleteBuildRepository (BuildId 0) emptyBuildSystemState
 
 
 test_AddAndDeleteBuildRepository =
-    assertNoError $
+    assertSUCCESS $
         deleteBuildRepository (BuildId 0) 
         =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing) emptyBuildSystemState
 

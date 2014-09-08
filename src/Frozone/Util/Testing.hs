@@ -4,12 +4,12 @@ import Frozone.Util.ErrorHandling
 import Control.Monad.Error
 
 
-assertNoError :: ErrorT String IO a -> IO a
-assertNoError errX =
+assertSUCCESS :: ErrorT String IO a -> IO a
+assertSUCCESS errX =
     do eitherX <- runErrorT errX
        handleEither eitherX fail return
 
-assertError :: ErrorT String IO a -> IO ()
-assertError errX =
+assertERROR :: ErrorT String IO a -> IO ()
+assertERROR errX =
     do eitherX <- runErrorT errX
        handleEither eitherX (const $ return ()) (fail "error expected!")
