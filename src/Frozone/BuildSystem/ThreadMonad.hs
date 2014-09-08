@@ -3,11 +3,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Frozone.BuildSystem.ThreadMonad where
 
-import Frozone.BuildSystem.GlobalState
 import Frozone.BuildSystem.Intern.Types
 import Frozone.BuildSystem.API
 
-import qualified Frozone.BuildSystem.Scheduling as Sched
+import Frozone.Util.Concurrency.SafeGlob
+import qualified Frozone.Util.Concurrency.Scheduling as Sched
 
 import Control.Monad.Reader
 import Control.Monad.Error

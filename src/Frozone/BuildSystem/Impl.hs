@@ -9,9 +9,9 @@ module Frozone.BuildSystem.Impl(
 
 
 import Frozone.BuildSystem.Intern.Types
-import qualified Frozone.BuildSystem.Scheduling as Sched
-import Frozone.BuildSystem.ThreadMonad
 import Frozone.BuildSystem.API
+import qualified Frozone.Util.Concurrency.Scheduling as Sched
+import Frozone.BuildSystem.ThreadMonad
 
 import Frozone.BuildTypes
 import Frozone.Util.ErrorHandling
@@ -104,6 +104,7 @@ getBuildRepositoryState buildSysRef buildRepoId =
        liftM br_buildState $ getBuildRepository buildRepoId model
 
 getBuildQueue = undefined
+
 stopBuild :: BuildSystemRef -> BuildId -> ErrorT ErrMsg IO ()
 stopBuild BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_sched = refSched, buildSysRef_config = config } buildRepoId =
     do let remAction' = runErrorT (remAction refSched buildRepoId) :: ThreadMonadT (ErrT IO) (Either ErrMsg ())
@@ -157,6 +158,9 @@ buildThread' buildRepoId tarFile =
     `handleError` (logBuild buildRepoId LogError)
     --updateBuildRepositoryAndLog buildRepoId $ mapToBuildState $ const Building
 
+------------------------------------------------------------------------------
+-- Internals
+------------------------------------------------------------------------------
 
 -- determines the location where to save a BuildRepository
 destDir :: BuildSystemConfig -> BuildId -> TarFile -> FilePath
@@ -192,104 +196,14 @@ modifyRepoAndLog buildRepoId f =
        model <- lift $ getModel
        logBuild buildRepoId LogInfo . show =<< getBuildRepository buildRepoId model
 
-{-
-logBuildState stateRef buildRepoId logLevel = 
-    withState stateRef $ \buildSystem ->
-        do buildRepo <- getBuildRepository buildRepoId buildSystem
-           logBuild buildRepoId logLevel $ show buildRepo
--}
-
 logBuild buildRepoId logLevel msg = 
     doLog logLevel $ "Build " ++ show (fromBuildId buildRepoId) ++ ": " ++ msg
-
-{-
-waitForState :: TimeMs -> BuildState -> BuildId -> TVar BuildSystemState -> ErrorT ErrMsg IO AwaitRes
-waitForState maxTime state = awaitStateCond maxTime (==state)
-
-awaitStateCond :: TimeMs -> (BuildState -> Bool) -> BuildId -> TVar BuildSystemState -> ErrorT ErrMsg IO AwaitRes
-awaitStateCond maxTime cond = awaitBuildRepo maxTime (cond . br_buildState)
--}
 
 awaitBuildRepoMaxTime :: TimeMs -> (BuildRepository -> Bool) -> BuildId -> TVar BuildSystemState -> ErrorT ErrMsg IO AwaitRes
 awaitBuildRepoMaxTime maxTime condBr buildRepoId ref =
     awaitMaxTimeOrErr maxTime cond ref 
     where
         cond buildSystemState = return . condBr =<< getBuildRepository buildRepoId buildSystemState
-
-
-
-{-
-buildThread :: BuildSystemConfig -> RefToBuildSystemState -> BuildId -> TarFile -> IO ()
-buildThread config stateRef buildRepoId tarFile =
-    handleBuildErrors stateRef buildRepoId $ 
-    do 
-       threadId <- lift myThreadId
-       updateBuild stateRef buildRepoId $
-           (mapToBuildState (const BuildPreparing) . mapToThread (const $ Just threadId))
-       stopIfRequested stateRef buildRepoId
-       -- 1. untar
-       prepareBuild config stateRef buildRepoId tarFile 
-       stopIfRequested stateRef buildRepoId
-       -- 2. run build script
-       build config stateRef buildRepoId
--}
-
-{-
--- |clears all information about builds, in whatever state they are
-clearBuildSystem :: RefToBuildSystemState -> IO ()
-clearBuildSystem state = 
-    atomically $ writeTVar state emptyBuildSystemState
-
- 
-
--- > BuildPreparing ... BuildReady
-addBuild :: BuildSystemConfig -> TVar BuildSystemState -> BuildId -> TarFile -> ErrT IO ()
-addBuild config stateRef buildRepoId tarFile = 
-    do logBuild buildRepoId LogNote $ "addBuild called"
-       updateState stateRef $ addBuildRepository buildRepoId (buildRep Nothing BuildScheduled)
-       stopIfRequested stateRef buildRepoId
-       _ <- lift $ forkIO $ buildThread config stateRef buildRepoId tarFile
-       return ()
-    where
-        buildRep path buildState =
-            BuildRepository
-            { br_path = path
-            , br_buildState = buildState
-            , br_thread = Nothing
-            }
-
-
--- for any known Build: return its state
-getBuildRepositoryState :: BuildSystemConfig -> TVar BuildSystemState -> BuildId -> ErrT IO BuildState
-getBuildRepositoryState config stateVar buildId = 
-    do allBuilds <- lift $ liftM buildSysSt_allBuilds $ atomically $ readTVar stateVar
-       (return $ M.lookup buildId allBuilds) >>= (\x -> handleMaybe x (throwError "build not found!") return)
-           >>= return . br_buildState
-
-getBuildQueue = undefined
-
--- BuildScheduled | Building -> BuildStopped
-stopBuild :: BuildSystemConfig -> RefToBuildSystemState -> BuildId -> ErrT IO ()
-stopBuild config stateRef buildId =
-    do logBuild buildId LogNote $ "stopBuild called"
-       withState stateRef $ \buildSystemState ->
-           do buildRep <- getBuildRepository buildId buildSystemState
-              when (not $ (br_buildState buildRep) `elem` validStopStates) $
-                  throwError $ "Build in state " ++ show (br_buildState buildRep)
-              logBuild buildId LogInfo $ "adding to stop queue: " ++ show buildId
-       updateState stateRef $ return . mapToExpectedToStop (`L.union` [buildId])
-       -- wait for build to stop:
-       logBuild buildId LogInfo $ "waiting for build to stop..."
-       awaitRes <- awaitStateCond 10000 (`elem` allStates L.\\ validStopStates) buildId stateRef
-       case awaitRes of
-         TimeOut -> throwError $ "could not stop build! (time out while waiting to stop)"
-         _ -> return ()
-       logBuild buildId LogInfo $ "stopBuild returns"
-
-archiveBuild config refToBuildSystemState buildId = undefined
-restartBuild config refToBuildSystemState buildId = undefined
-
--}
 
 {-
 loadBuildSystem :: IO RefToBuildSystemState

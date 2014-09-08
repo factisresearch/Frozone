@@ -1,7 +1,7 @@
 module Frozone.BuildSystem.Intern.Model where
 
 import Frozone.BuildSystem.API
-import qualified Frozone.BuildSystem.Scheduling as Sched
+import qualified Frozone.Util.Concurrency.Scheduling as Sched
 
 import qualified Data.Map.Strict as M
 

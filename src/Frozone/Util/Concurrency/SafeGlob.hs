@@ -1,6 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE Rank2Types #-}
-module Frozone.BuildSystem.GlobalState(
+module Frozone.Util.Concurrency.SafeGlob(
     SafeGlobT(),
     getGlob, modifyGlob, modifyGlobErr,
     forkThread,

@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
-module Frozone.BuildSystem.Scheduling.Model where
+module Frozone.Util.Concurrency.Scheduling.Model where
 
-import qualified Frozone.BuildSystem.Intern.Queue as Q
+import qualified Frozone.Util.Queue as Q
 
 --import Frozone.Util.ErrorHandling
 import qualified Data.Map as M

@@ -1,4 +1,4 @@
-module Frozone.BuildSystem.Scheduling(
+module Frozone.Util.Concurrency.Scheduling(
     Task(..), Tasks,
     Thread(..), Running,
     JobId(..), JobState(..),
@@ -11,10 +11,10 @@ module Frozone.BuildSystem.Scheduling(
     waitForJob, waitForJobMaxTime,
 ) where
 
-import Frozone.BuildSystem.Scheduling.Model
+import Frozone.Util.Concurrency.Scheduling.Model
 
 import Frozone.Util.Concurrency
-import qualified Frozone.BuildSystem.Intern.Queue as Q
+import qualified Frozone.Util.Queue as Q
 import qualified Data.Map as M
 
 import Control.Monad.Error

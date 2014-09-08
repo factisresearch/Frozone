@@ -1,5 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module Frozone.BuildSystem.Intern.Queue(
+module Frozone.Util.Queue(
     Queue(),
     empty, fromList,
     put, get, take,
