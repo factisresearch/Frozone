@@ -76,13 +76,45 @@ startBuildSystem config =
 
 stopBuildSystem :: BuildSystemRef -> ErrorT ErrMsg IO ()
 stopBuildSystem ref =
-    do Sched.stopScheduler $ buildSysRef_sched ref
+    do doLog LogInfo $ "stopBuildSystem called: killing all running builds"
+       lift $ Sched.killAllJobs $ buildSysRef_sched ref
+       Sched.stopScheduler $ buildSysRef_sched ref
+
+------------------------------------------------------------------------------
+-- just API:
+------------------------------------------------------------------------------
 
 addBuild :: BuildSystemRef -> BuildId -> TarFile -> ErrorT ErrMsg IO ()
 addBuild BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_sched = refSched, buildSysRef_config = config} buildRepoId tarFile = 
     do logBuild buildRepoId LogInfo $ "addBuild called"
        runInThreadMonadAndReturnErrors config refModel (addBuildAction refSched buildRepoId tarFile)
        `logErrors` (logBuild buildRepoId LogError)
+
+getBuildRepositoryState :: BuildSystemRef -> BuildId -> ErrT IO BuildState
+getBuildRepositoryState buildSysRef buildRepoId =
+    do model <- lift $ atomically $ readTVar (buildSysRef_refModel buildSysRef)
+       liftM br_buildState $ getBuildRepository buildRepoId model
+
+getBuildQueue = undefined
+
+stopBuild :: BuildSystemRef -> BuildId -> ErrorT ErrMsg IO ()
+stopBuild BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_sched = refSched, buildSysRef_config = config } buildRepoId =
+    do logBuild buildRepoId LogInfo $ "stopBuild called"
+       runInThreadMonadAndReturnErrors config refModel (stopAction refSched buildRepoId)
+       `logErrors` (logBuild buildRepoId LogError)
+
+archiveBuild = undefined
+
+restartBuild :: BuildSystemRef -> BuildId -> ErrorT ErrMsg IO ()
+restartBuild BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_sched = refSched, buildSysRef_config = config} buildRepoId = 
+    do logBuild buildRepoId LogInfo $ "restartBuild called"
+       runInThreadMonadAndReturnErrors config refModel (restartBuildAction refSched buildRepoId)
+       `logErrors` (logBuild buildRepoId LogError)
+
+
+------------------------------------------------------------------------------
+-- implementation using the ThreadMonadT:
+------------------------------------------------------------------------------
 
 addBuildAction :: MonadIO m => SchedRef BuildParams -> BuildId -> TarFile -> ErrT (ThreadMonadT m) ()
 addBuildAction refSched buildRepoId tarFile =
@@ -100,21 +132,9 @@ addBuildAction refSched buildRepoId tarFile =
             BuildRepository
             { br_path = Nothing
             , br_buildState = BuildScheduled
+            , br_incoming = tarFile
             , br_thread = Just threadId
             }
-
-getBuildRepositoryState :: BuildSystemRef -> BuildId -> ErrT IO BuildState
-getBuildRepositoryState buildSysRef buildRepoId =
-    do model <- lift $ atomically $ readTVar (buildSysRef_refModel buildSysRef)
-       liftM br_buildState $ getBuildRepository buildRepoId model
-
-getBuildQueue = undefined
-
-stopBuild :: BuildSystemRef -> BuildId -> ErrorT ErrMsg IO ()
-stopBuild BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_sched = refSched, buildSysRef_config = config } buildRepoId =
-    do logBuild buildRepoId LogInfo $ "stopBuild called"
-       runInThreadMonadAndReturnErrors config refModel (stopAction refSched buildRepoId)
-       `logErrors` (logBuild buildRepoId LogError)
 
 stopAction :: MonadIO m => SchedRef BuildParams -> BuildId -> ErrT (ThreadMonadT m) ()
 stopAction schedRef buildRepoId =
@@ -124,12 +144,23 @@ stopAction schedRef buildRepoId =
              do logBuild buildRepoId LogInfo $ "removing job from build scheduler"
                 Sched.removeJob schedRef jobId
          Nothing ->
-             do logBuild buildRepoId LogInfo $ "build not scheduled, nothing to do"
+             do logBuild buildRepoId LogInfo $ "build not scheduled or running, nothing to do"
                 return ()
        modifyRepoAndLog buildRepoId $ mapToBuildState $ const BuildStopped
+       modifyRepoAndLog buildRepoId $ mapToThread $ const Nothing
 
-archiveBuild = undefined
-restartBuild = undefined
+
+restartBuildAction :: MonadIO m => SchedRef BuildParams -> BuildId -> ErrT (ThreadMonadT m) ()
+restartBuildAction refSched buildRepoId =
+    do repo <- getRepo buildRepoId
+       let
+         buildState = br_buildState repo
+         tarFile = br_incoming repo
+       when (not $ buildState `elem` [BuildStopped, BuildFailed, BuildSuccess]) $
+           throwError $ "error restarting build: build in state \"" ++ show buildState ++ "\""
+       jobId <- liftIO $ Sched.addTask refSched $ Sched.Task (buildRepoId, tarFile)
+       modifyRepoAndLog buildRepoId $ mapToThread $ const $ Just jobId
+
 
 type BuildParams = (BuildId, TarFile)
 
@@ -171,8 +202,8 @@ runInThreadMonadAndReturnErrors ::
     ErrT IO ()
 runInThreadMonadAndReturnErrors config refModel action = 
     do 
-       let stopAction' = runErrorT action :: ThreadMonadT (ErrT IO) (Either ErrMsg ())
-       errOrUnit <- evalThreadMonadTWithTVar stopAction' config refModel toIO
+       let action' = runErrorT action :: ThreadMonadT (ErrT IO) (Either ErrMsg ())
+       errOrUnit <- evalThreadMonadTWithTVar action' config refModel toIO :: ErrT IO (Either ErrMsg ())
        case errOrUnit of
          Left err ->
              do --logBuild buildRepoId LogError $ "error: " ++ err
@@ -185,10 +216,10 @@ runInThreadMonadAndReturnErrors config refModel action =
         toIO = undefined -- (`handleError` (logBuild buildRepoId LogError))
 
 logErrors :: MonadIO m => ErrorT ErrMsg m a -> (ErrMsg -> m ()) -> ErrorT ErrMsg m a
-logErrors mx log =
+logErrors mx loggingFunc =
     do errOrVal <- lift $ runErrorT mx
        case errOrVal of
-         Left err -> lift (log err) >> throwError err
+         Left err -> lift (loggingFunc err) >> throwError err
          Right val -> return val
 
 -- determines the location where to save a BuildRepository

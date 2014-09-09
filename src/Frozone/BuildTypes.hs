@@ -8,7 +8,7 @@ data MicroBranchInfo = MicroBranchInfo
     deriving (Show)
 
 data TarFile = TarFile { fromTarFile :: FilePath }
-    deriving (Show)
+    deriving (Show, Eq)
 
 data PatchBundle = PatchBundle
     deriving (Show)

@@ -4,6 +4,7 @@ module Frozone.Tests.TestBuildSystem_Model(
 ) where
 
 import Test.Framework
+import Frozone.BuildTypes
 import Frozone.Util.Testing
 
 import Frozone.BuildSystem.API
@@ -11,12 +12,12 @@ import Frozone.BuildSystem.Intern.Model
 
 
 test_AddBuildRepository =
-    do assertSUCCESS $ addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing) emptyBuildSystemState
+    do assertSUCCESS $ addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing (TarFile "dummy.tar")) emptyBuildSystemState
 
 test_AddBuildRepositoryTwice =
     assertERROR $
-        addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing) 
-        =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing) emptyBuildSystemState
+        addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing (TarFile "dummy.tar")) 
+        =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing (TarFile "dummy.tar")) emptyBuildSystemState
 
 test_DeleteBuildRepository =
     assertERROR $
@@ -26,7 +27,7 @@ test_DeleteBuildRepository =
 test_AddAndDeleteBuildRepository =
     assertSUCCESS $
         deleteBuildRepository (BuildId 0) 
-        =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing) emptyBuildSystemState
+        =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing (TarFile "dummy.tar")) emptyBuildSystemState
 
 {-
 test_mapToAllBuilds =
@@ -45,7 +46,7 @@ test_mapToBuildState =
         (mapToBuildState (const BuildSuccess) $ originalBuildRep)
         (originalBuildRep{ br_buildState = BuildSuccess })
     where
-        originalBuildRep = buildRepository path BuildPreparing
+        originalBuildRep = buildRepository path BuildPreparing (TarFile "dummy.tar")
         path = Just "test/bla"
 
 --        =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing) emptyBuildSystemState

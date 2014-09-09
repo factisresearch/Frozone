@@ -10,6 +10,7 @@ import Control.Monad.STM
 import Control.Concurrent.STM.TVar
 import Control.Concurrent
 import Control.Monad
+import qualified Data.Foldable as F
 --import Control.Monad.Error
 
 
@@ -95,6 +96,12 @@ nextToRunning SchedData { sched_maxThreads = maxThreads, sched_tasks = refTasks,
 removeFromRunning :: SchedData a -> JobId -> STM ()
 removeFromRunning SchedData{ sched_running = refRunning } jobId =
     modifyTVar refRunning $ M.delete jobId
+
+getAllJobs :: SchedData a -> STM ([JobId], [JobId]) -- (tasks, running)
+getAllJobs SchedData{ sched_tasks = refTasks, sched_running = refRunning } =
+    do tasks <- return . F.toList . fmap fst =<< readTVar refTasks
+       running <- return . M.keys =<< readTVar refRunning
+       return (tasks, running)
 
 getJob :: forall a . SchedData a -> JobId -> STM (Maybe (Either (Task a) (Thread a)))
 getJob SchedData{ sched_tasks = refTasks, sched_running = refRunning } jobId =

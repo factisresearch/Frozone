@@ -11,17 +11,23 @@ module Frozone.Util.Queue(
 
 import qualified Data.Sequence as S
 import Prelude hiding (take, null, length, elem, filter, map)
+import qualified Data.Foldable as F
 --import qualified Data.List as L
 
 import Control.Monad
 
 
 newtype Queue a = Queue { fromQueue :: S.Seq a }
-    deriving (Eq, Functor)
+    deriving (Eq, Functor, F.Foldable)
 
 empty = Queue $ S.empty
 
 fromList = Queue . S.fromList
+
+{-
+toList :: Queue a -> [a]
+toList = toList . fromQueue
+-}
 
 put x = Queue . (S.|> x) . fromQueue
 

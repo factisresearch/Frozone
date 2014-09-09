@@ -8,6 +8,7 @@ module Frozone.Util.Concurrency.Scheduling(
     stopScheduler,
     addTask,
     removeJob,
+    killAllJobs,
     waitForJob, waitForJobMaxTime,
 ) where
 
@@ -16,6 +17,8 @@ import Frozone.Util.Concurrency.Scheduling.Model
 import Frozone.Util.Concurrency
 import qualified Frozone.Util.Queue as Q
 import qualified Data.Map as M
+import Data.Maybe
+import Data.Either
 
 import Control.Monad.Error
 
@@ -38,6 +41,7 @@ runScheduler maxThreads f =
            { sched_threadId = Just threadId
            }
 
+{- |this stops the scheduler thread. If you want to kill all jobs as well, use killAllJobs before -}
 stopScheduler :: (SchedData a) -> ErrorT ErrMsg IO ()
 stopScheduler schedData =
     do let mThreadId = sched_threadId schedData
@@ -60,19 +64,9 @@ addTask schedData task =
 
 removeJob :: MonadIO m => SchedData a -> JobId -> ErrorT ErrMsg m ()
 removeJob schedData jobId =
-    do eitherErrOrMaybeThreadId <- liftIO $ atomically $
-           do mTaskOrThread <- getJob schedData jobId
-              case mTaskOrThread of
-                Nothing -> return $ Left $ "job " ++ show jobId ++ " not found!" :: STM (Either ErrMsg (Maybe ThreadId))
-                Just taskOrThread ->
-                  case taskOrThread of
-                    Left _ ->
-                      do removeJobFromModel schedData jobId
-                         return $ Right $ Nothing
-                    Right thread -> 
-                      do removeJobFromModel schedData jobId
-                         return $ Right $ Just $ thread_id thread
-       case eitherErrOrMaybeThreadId of
+    do errOrMaybeThreadId <- liftIO $ atomically $
+           removeJobPrivate schedData jobId
+       case errOrMaybeThreadId of
          Left err -> throwError err
          Right (Just threadId) -> liftIO $ killThread threadId
          Right Nothing -> return ()
@@ -103,7 +97,28 @@ waitForJob schedData jobState jobId =
           atomically $
               await (not . M.member jobId) (sched_running schedData)
 
+killAllJobs :: SchedData a -> IO ()
+killAllJobs schedData =
+    do allThreadIds <-
+           atomically $
+           do (tasks, running) <- getAllJobs schedData
+              mapM (removeJobPrivate schedData) $ tasks
+              mapM (removeJobPrivate schedData) $ running
+       mapM_ killThread $ catMaybes $ rights allThreadIds
 
+removeJobPrivate schedData jobId =
+    do mTaskOrThread <- getJob schedData jobId
+       case mTaskOrThread of
+         Nothing -> return $ Left $ "job " ++ show jobId ++ " not found!" :: STM (Either ErrMsg (Maybe ThreadId))
+         Just taskOrThread ->
+             case taskOrThread of
+               Left _ ->
+                 do removeJobFromModel schedData jobId
+                    return $ Right $ Nothing
+               Right thread -> 
+                 do removeJobFromModel schedData jobId
+                    return $ Right $ Just $ thread_id thread
+ 
 {-
 waitForAll :: TVar (Tasks a) -> TVar (Running a) -> IO ()
 waitForAll refTasks refRunning =

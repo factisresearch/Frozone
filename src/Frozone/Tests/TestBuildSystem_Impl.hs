@@ -85,10 +85,13 @@ test_addThenRebuild =
                fail "added build, but still in wrong state!"
            waitRes <- assertSUCCESS $
                awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId 0) (buildSysRef_refModel bs)
+           assertEqual StateReached waitRes
+
            -- trying to start a build that has already been finished should give an error!
            _ <- assertERROR $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
            -- use bs_restart for this case:
            _ <- assertSUCCESS $ bs_restartBuild impl (BuildId 0)
+
 
            assertSUCCESS $ stopBuildSystem bs
            return ()
@@ -100,7 +103,7 @@ test_stop =
            let impl = buildSysImpl bs
 
            _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
-           state <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
+           _ <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
 
            -- this is not a good test. could be the build is already finished...
            assertSUCCESS $
@@ -108,6 +111,8 @@ test_stop =
            buildRepState <- assertSUCCESS $
                bs_getBuildRepositoryState impl (BuildId 0)
            assertEqual BuildStopped buildRepState
+
+           threadDelay 1000000
 
            assertSUCCESS $ stopBuildSystem bs
            return ()
@@ -147,6 +152,7 @@ test_build =
            assertSUCCESS $ stopBuildSystem bs
            return ()
 
+-- what does this test test?
 test_concurrentBuilds :: IO ()
 test_concurrentBuilds =
     withConfig $ \config ->
@@ -162,6 +168,8 @@ test_concurrentBuilds =
 
            waitRes <- assertSUCCESS $ awaitMaxTimeOrErr 2000 cond (buildSysRef_refModel bs)
            assertEqual StateReached $ waitRes
+
+           assertSUCCESS $ stopBuildSystem bs
     where
         cond :: Monad m => BuildSystemState -> ErrorT ErrMsg m Bool
         cond buildSystem =
