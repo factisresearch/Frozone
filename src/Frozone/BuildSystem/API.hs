@@ -30,7 +30,7 @@ data BuildState
     | BuildArchived -- deleted from disk
     deriving (Show, Eq, Enum)
 
-allStates = [(BuildScheduled)..(BuildArchived)]
+allBuildStates = [(BuildScheduled)..(BuildArchived)]
 -- states in which stopBuild is a valid action:
 validStopStates = [BuildScheduled, BuildPreparing, Building]
 

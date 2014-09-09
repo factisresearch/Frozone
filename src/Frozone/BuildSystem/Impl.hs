@@ -100,7 +100,11 @@ getBuildRepositoryState buildSysRef buildRepoId =
     do model <- lift $ atomically $ readTVar (buildSysRef_refModel buildSysRef)
        liftM br_buildState $ getBuildRepository buildRepoId model
 
-getBuildQueue = undefined
+getBuildQueue :: BuildSystemRef -> BuildState -> IO [BuildId]
+getBuildQueue BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_config = config } buildState = 
+    do doLog LogInfo $ "getBuildQueue called"
+       runInThreadMonadAndReturnErrors config refModel (getBuildQueueAction buildState)
+       `handleError` (\err -> doLog LogError err >> return [])
 
 stopBuild :: BuildSystemRef -> BuildId -> ErrorT ErrMsg IO ()
 stopBuild BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_sched = refSched, buildSysRef_config = config } buildRepoId =
@@ -140,6 +144,11 @@ addBuildAction refSched buildRepoId tarFile =
             , br_incoming = tarFile
             , br_thread = Just threadId
             }
+
+getBuildQueueAction :: MonadIO m => BuildState -> ErrT (ThreadMonadT m) [BuildId]
+getBuildQueueAction buildState =
+    do model <- lift $ getModel
+       return $ getBuildsInState buildState model
 
 stopAction :: MonadIO m => SchedRef BuildParams -> BuildId -> ErrT (ThreadMonadT m) ()
 stopAction schedRef buildRepoId =
@@ -203,22 +212,24 @@ buildThread' buildRepoId tarFile =
 
 runInThreadMonadAndReturnErrors ::
     BuildSystemConfig -> TVar BuildSystemState ->
-    (forall m . MonadIO m => ErrT (ThreadMonadT m) ()) ->
-    ErrT IO ()
+    (forall m . MonadIO m => ErrT (ThreadMonadT m) a) ->
+    ErrT IO a
 runInThreadMonadAndReturnErrors config refModel action = 
     do 
-       let action' = runErrorT action :: ThreadMonadT (ErrT IO) (Either ErrMsg ())
-       errOrUnit <- evalThreadMonadTWithTVar action' config refModel toIO :: ErrT IO (Either ErrMsg ())
-       case errOrUnit of
+       let action' = runErrorT action -- :: ThreadMonadT (ErrT IO) (Either ErrMsg a)
+       errOrVal <- evalThreadMonadTWithTVar action' config refModel toIO -- :: ErrT IO (Either ErrMsg a)
+       case errOrVal of
          Left err ->
              do --logBuild buildRepoId LogError $ "error: " ++ err
                 throwError err
-         _ ->
+         Right val ->
             do --logBuild buildRepoId LogInfo $ "stopped build"
-               return ()
+               return val
     where
         toIO :: ErrT IO a -> IO a
-        toIO = undefined -- (`handleError` (logBuild buildRepoId LogError))
+        toIO _ =
+            do doLog LogError "ERROR: a thread has used fork which should not have done so!"
+               fail "ERROR: a thread has used fork which should not have done so!"
 
 logErrors :: MonadIO m => ErrorT ErrMsg m a -> (ErrMsg -> m ()) -> ErrorT ErrMsg m a
 logErrors mx loggingFunc =

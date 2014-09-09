@@ -29,17 +29,11 @@ test_AddAndDeleteBuildRepository =
         deleteBuildRepository (BuildId 0) 
         =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing (TarFile "dummy.tar")) emptyBuildSystemState
 
-{-
-test_mapToAllBuilds =
-    mapM assertEqual $
-        (mapToBuildState (const BuildSuccess) $ originalBuildRep)
-        emptyBuildSystemState{ buildSysSt_allBuilds = originalFieldValue }
-    where
-        originalFieldValue =
-            [ ((BuildId 0), buildRepository (Just "test/bla") BuildPreparing)
-            , ((BuildId 1), buildRepository Nothing BuildPreparing)
-            ]
--}
+test_getBuildsInState =
+    do let allLists = map (flip getBuildsInState emptyBuildSystemState) allBuildStates
+       mapM (assertEqual []) allLists
+       buildSys <- assertSUCCESS $ addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing (TarFile "dummy.tar")) emptyBuildSystemState
+       assertEqual [(BuildId 0)] $ getBuildsInState BuildPreparing buildSys
 
 test_mapToBuildState =
     assertEqual

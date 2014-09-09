@@ -60,6 +60,12 @@ updateBuildRepository buildId f buildSystem =
            throwError "could not update build repository: repository not found!"
        return $ mapToAllBuilds (M.adjust f buildId) buildSystem
 
+getBuildsInState :: BuildState -> BuildSystemState -> [BuildId]
+getBuildsInState buildState buildSystem = 
+    M.keys $
+    M.filterWithKey (\_ buildRep -> (==buildState) $ br_buildState buildRep) $
+    buildSysSt_allBuilds buildSystem
+
 getBuildRepository :: Monad m => BuildId -> BuildSystemState -> ErrT m BuildRepository
 getBuildRepository buildId buildSystem =
     handleMaybe (buildId `M.lookup` buildSysSt_allBuilds buildSystem)

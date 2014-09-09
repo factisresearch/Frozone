@@ -18,7 +18,7 @@ import qualified Codec.Archive.Tar.Entry as Tar
 
 import Control.Monad.Error
 import Control.Exception
-import Control.Concurrent
+--import Control.Concurrent
 
 import System.Directory
 import System.FilePath
@@ -188,8 +188,8 @@ test_getBuildQueue =
            assertEqual StateReached $ waitRes
 
            -- now all builds should be successful or failed:
-           allBuilds <- mapM (bs_getBuildQueue impl) [BuildSuccess, BuildFailed] :: IO [[BuildId]]
-           assertEqual (map BuildId [0..2]) (join allBuilds)
+           partitionOfBuilds <- mapM (bs_getBuildQueue impl) [BuildSuccess, BuildFailed] :: IO [[BuildId]]
+           assertEqual (map BuildId [0..2]) (join partitionOfBuilds)
     where
         allBuildsFinished :: Monad m => BuildSystemState -> ErrorT ErrMsg m Bool
         allBuildsFinished buildSystem =
