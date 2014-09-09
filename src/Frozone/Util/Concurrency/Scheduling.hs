@@ -15,6 +15,7 @@ module Frozone.Util.Concurrency.Scheduling(
 import Frozone.Util.Concurrency.Scheduling.Model
 
 import Frozone.Util.Concurrency
+import Frozone.Util.Logging
 import qualified Frozone.Util.Queue as Q
 import qualified Data.Map as M
 import Data.Maybe
@@ -34,8 +35,10 @@ type ErrMsg = String
 
 runScheduler :: Forkable m => Int -> (a -> m ()) -> m (SchedData a)
 runScheduler maxThreads f =
-    do schedData <- liftIO $ atomically $ emptySchedulerData maxThreads
+    do doLog LogInfo $ "SCHEDULER: runScheduler"
+       schedData <- liftIO $ atomically $ emptySchedulerData maxThreads
        threadId <- fork (scheduler schedData f)
+       doLog LogInfo $ "SCHEDULER: end of runScheduler"
        return $
            schedData
            { sched_threadId = Just threadId
@@ -45,17 +48,21 @@ runScheduler maxThreads f =
 stopScheduler :: (SchedData a) -> ErrorT ErrMsg IO ()
 stopScheduler schedData =
     do let mThreadId = sched_threadId schedData
+       doLog LogInfo $ "SCHEDULER: stop"
        case mThreadId of
          Nothing -> throwError "scheduler not running!"
-         Just threadId -> lift $ killThread threadId
+         Just threadId ->
+             do doLog LogInfo $ "SCHEDULER: killing scheduler thread"
+                lift $ killThread threadId
+       doLog LogInfo $ "SCHEDULER: end of stop"
 
 scheduler :: Forkable m => SchedData a -> (a -> m b) -> m ()
 scheduler schedData f =
     forever $
-    do 
+    do (jobId, nextTask) <- (liftIO . atomically . nextToRunning schedData) =<< liftIO myThreadId
+       doLog LogInfo $ "SCHEDULER: adding " ++ show jobId
        fork $
-           do (jobId, nextTask) <- (liftIO . atomically . nextToRunning schedData) =<< liftIO myThreadId
-              f $ fromTask nextTask
+           do f $ fromTask nextTask
               liftIO $ atomically $ removeFromRunning schedData jobId
 
 addTask :: SchedData a -> Task a -> IO JobId

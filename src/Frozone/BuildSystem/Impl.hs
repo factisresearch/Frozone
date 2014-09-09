@@ -66,7 +66,10 @@ buildSysImpl buildSystemRef =
 
 startBuildSystem :: BuildSystemConfig -> IO BuildSystemRef
 startBuildSystem config =
-    do (schedRef, ref) <- evalThreadMonadTUnsafe (Sched.runScheduler 6 buildThread) config emptyBuildSystemState id
+    do doLog LogInfo $ "startBuildSystem called"
+       doLog LogInfo $ "starting scheduler..."
+       (schedRef, ref) <- evalThreadMonadTUnsafe (Sched.runScheduler 6 buildThread) config emptyBuildSystemState id
+       doLog LogInfo $ "end of startBuildSystem"
        return $
            BuildSystemRef
            { buildSysRef_sched = schedRef
@@ -78,7 +81,9 @@ stopBuildSystem :: BuildSystemRef -> ErrorT ErrMsg IO ()
 stopBuildSystem ref =
     do doLog LogInfo $ "stopBuildSystem called: killing all running builds"
        lift $ Sched.killAllJobs $ buildSysRef_sched ref
+       doLog LogInfo $ "stopping scheduler..."
        Sched.stopScheduler $ buildSysRef_sched ref
+       doLog LogInfo $ "finished ."
 
 ------------------------------------------------------------------------------
 -- just API:

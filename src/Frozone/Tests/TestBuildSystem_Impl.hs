@@ -31,8 +31,8 @@ import Test.Framework
 test_add  :: IO ()
 test_add = 
     withConfig $ \config ->
-        do bs <- startBuildSystem config
-           let impl = buildSysImpl bs
+    bracket (startBuildSystem config) (assertSUCCESS . stopBuildSystem) $ \bs ->
+        do let impl = buildSysImpl bs
 
            fakeIncomingTar False (bsc_incoming config) "test.tar"
            _ <- assertERROR $ bs_getBuildRepositoryState impl $ BuildId 0
@@ -46,14 +46,13 @@ test_add =
                awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId 0) (buildSysRef_refModel bs)
            assertEqual StateReached waitRes
 
-           assertSUCCESS $ stopBuildSystem bs
            return ()
 
 test_addTwice  :: IO ()
 test_addTwice = 
     withConfig $ \config ->
-        do bs <- startBuildSystem config
-           let impl = buildSysImpl bs
+    bracket (startBuildSystem config) (assertSUCCESS . stopBuildSystem) $ \bs ->
+        do let impl = buildSysImpl bs
 
            fakeIncomingTar False (bsc_incoming config) "test.tar"
 
@@ -68,14 +67,13 @@ test_addTwice =
                awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId 0) (buildSysRef_refModel bs)
            assertEqual StateReached waitRes
 
-           assertSUCCESS $ stopBuildSystem bs
            return ()
 
 test_addThenRebuild  :: IO ()
 test_addThenRebuild = 
     withConfig $ \config ->
-        do bs <- startBuildSystem config
-           let impl = buildSysImpl bs
+    bracket (startBuildSystem config) (assertSUCCESS . stopBuildSystem) $ \bs ->
+        do let impl = buildSysImpl bs
 
            fakeIncomingTar False (bsc_incoming config) "test.tar"
 
@@ -92,15 +90,13 @@ test_addThenRebuild =
            -- use bs_restart for this case:
            _ <- assertSUCCESS $ bs_restartBuild impl (BuildId 0)
 
-
-           assertSUCCESS $ stopBuildSystem bs
            return ()
 
 test_stop  :: IO ()
 test_stop = 
     withConfig $ \config ->
-        do bs <- startBuildSystem config
-           let impl = buildSysImpl bs
+    bracket (startBuildSystem config) (assertSUCCESS . stopBuildSystem) $ \bs ->
+        do let impl = buildSysImpl bs
 
            _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
            _ <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
@@ -112,16 +108,15 @@ test_stop =
                bs_getBuildRepositoryState impl (BuildId 0)
            assertEqual BuildStopped buildRepState
 
-           threadDelay 1000000
+           --threadDelay 1000000
 
-           assertSUCCESS $ stopBuildSystem bs
            return ()
 
 test_build :: IO ()
 test_build =
     withConfig $ \config ->
-        do bs <- startBuildSystem config
-           let impl = buildSysImpl bs
+    bracket (startBuildSystem config) (assertSUCCESS . stopBuildSystem) $ \bs ->
+        do let impl = buildSysImpl bs
 
            doLog LogInfo $ "starting build 0..."
            -- building this repository should FAIL:
@@ -133,7 +128,7 @@ test_build =
 
            doLog LogInfo $ "wait for build 0..."
            waitRes <- assertSUCCESS $
-               awaitBuildRepoMaxTime 1500 ((==BuildFailed) . br_buildState) (BuildId 0) (buildSysRef_refModel bs)
+               awaitBuildRepoMaxTime 2000 ((==BuildFailed) . br_buildState) (BuildId 0) (buildSysRef_refModel bs)
            assertEqual StateReached waitRes
 
            doLog LogInfo $ "starting build 1..."
@@ -146,18 +141,17 @@ test_build =
 
            doLog LogInfo $ "wait for build 1..."
            waitRes2 <- assertSUCCESS $
-               awaitBuildRepoMaxTime 1500 ((==BuildSuccess) . br_buildState) (BuildId 1) (buildSysRef_refModel bs)
+               awaitBuildRepoMaxTime 2000 ((==BuildSuccess) . br_buildState) (BuildId 1) (buildSysRef_refModel bs)
            assertEqual StateReached waitRes2
 
-           assertSUCCESS $ stopBuildSystem bs
            return ()
 
 -- what does this test test?
 test_concurrentBuilds :: IO ()
 test_concurrentBuilds =
     withConfig $ \config ->
-        do bs <- startBuildSystem config
-           let impl = buildSysImpl bs
+    bracket (startBuildSystem config) (assertSUCCESS . stopBuildSystem) $ \bs ->
+        do let impl = buildSysImpl bs
 
            fakeIncomingTar False (bsc_incoming config) "0.tar"
            _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "0.tar")
@@ -168,11 +162,37 @@ test_concurrentBuilds =
 
            waitRes <- assertSUCCESS $ awaitMaxTimeOrErr 2000 cond (buildSysRef_refModel bs)
            assertEqual StateReached $ waitRes
-
-           assertSUCCESS $ stopBuildSystem bs
     where
         cond :: Monad m => BuildSystemState -> ErrorT ErrMsg m Bool
         cond buildSystem =
+            do buildRepositories <- mapM ((flip getBuildRepository) buildSystem . BuildId) $ [0..2]
+               return $ and $ map ((==BuildSuccess) . br_buildState) buildRepositories
+
+test_getBuildQueue  :: IO ()
+test_getBuildQueue = 
+    withConfig $ \config ->
+    bracket (startBuildSystem config) (assertSUCCESS . stopBuildSystem) $ \bs ->
+        do let impl = buildSysImpl bs
+
+           fakeIncomingTar False (bsc_incoming config) "0.tar"
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "0.tar")
+           fakeIncomingTar False (bsc_incoming config) "1.tar"
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 1) (TarFile "1.tar")
+           fakeIncomingTar False (bsc_incoming config) "2.tar"
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 2) (TarFile "2.tar")
+
+           allBuilds <- mapM (bs_getBuildQueue impl) [BuildScheduled, Building, BuildSuccess, BuildFailed] :: IO [[BuildId]]
+           assertEqual (map BuildId [0..2]) (join allBuilds)
+
+           waitRes <- assertSUCCESS $ awaitMaxTimeOrErr 2000 allBuildsFinished (buildSysRef_refModel bs)
+           assertEqual StateReached $ waitRes
+
+           -- now all builds should be successful or failed:
+           allBuilds <- mapM (bs_getBuildQueue impl) [BuildSuccess, BuildFailed] :: IO [[BuildId]]
+           assertEqual (map BuildId [0..2]) (join allBuilds)
+    where
+        allBuildsFinished :: Monad m => BuildSystemState -> ErrorT ErrMsg m Bool
+        allBuildsFinished buildSystem =
             do buildRepositories <- mapM ((flip getBuildRepository) buildSystem . BuildId) $ [0..2]
                return $ and $ map ((==BuildSuccess) . br_buildState) buildRepositories
 
