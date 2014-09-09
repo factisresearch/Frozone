@@ -11,12 +11,14 @@ import Frozone.BuildTypes
 import Frozone.Util.Testing
 import Frozone.Util.Logging
 import Frozone.Util.Concurrency
+import Frozone.Util.Process
 
 import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Archive.Tar.Entry as Tar
 
 import Control.Monad.Error
 import Control.Exception
+import Control.Concurrent
 
 import System.Directory
 import System.FilePath
@@ -43,6 +45,50 @@ test_add =
            waitRes <- assertSUCCESS $
                awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId 0) (buildSysRef_refModel bs)
            assertEqual StateReached waitRes
+
+           assertSUCCESS $ stopBuildSystem bs
+           return ()
+
+test_addTwice  :: IO ()
+test_addTwice = 
+    withConfig $ \config ->
+        do bs <- startBuildSystem config
+           let impl = buildSysImpl bs
+
+           fakeIncomingTar False (bsc_incoming config) "test.tar"
+
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
+           state <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
+           when (not $ state `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
+               fail "added build, but still in wrong state!"
+           -- adding the same build again should give an error!
+           _ <- assertERROR $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
+
+           waitRes <- assertSUCCESS $
+               awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId 0) (buildSysRef_refModel bs)
+           assertEqual StateReached waitRes
+
+           assertSUCCESS $ stopBuildSystem bs
+           return ()
+
+test_addThenRebuild  :: IO ()
+test_addThenRebuild = 
+    withConfig $ \config ->
+        do bs <- startBuildSystem config
+           let impl = buildSysImpl bs
+
+           fakeIncomingTar False (bsc_incoming config) "test.tar"
+
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
+           state <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
+           when (not $ state `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
+               fail "added build, but still in wrong state!"
+           waitRes <- assertSUCCESS $
+               awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId 0) (buildSysRef_refModel bs)
+           -- trying to start a build that has already been finished should give an error!
+           _ <- assertERROR $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
+           -- use bs_restart for this case:
+           _ <- assertSUCCESS $ bs_restartBuild impl (BuildId 0)
 
            assertSUCCESS $ stopBuildSystem bs
            return ()
@@ -124,7 +170,7 @@ test_concurrentBuilds =
 
 withConfig :: (BuildSystemConfig -> IO a) -> IO a
 withConfig f =
-    do dir <- liftM2 (</>) (return "/tmp/") (liftM show (randomIO :: IO Int))
+    do dir <- liftM2 (</>) (return "/tmp/") (liftM (take 8 . show) (randomIO :: IO Int))
        bracket_
            (initTest dir)
            (cleanUp dir) -- wait for running builds
@@ -139,11 +185,16 @@ withConfig f =
 initTest dir = 
     do thereAreRelics <- liftM2 (&&) (doesFileExist dir) (doesDirectoryExist dir)
        when thereAreRelics $ removeDirectoryRecursive dir
-       createDirectory $ dir
+       putStrLn $ "creating directory structure at " ++ dir
+       createDirectoryIfMissing True $ dir
        createDirectory $ bsBaseDir dir
        createDirectory $ incomingDir dir
+       --showDir dir
 
-fakeIncomingTar scriptShouldFail dir fileName = createTar scriptShouldFail $ dir </> fileName
+fakeIncomingTar scriptShouldFail dir fileName =
+    do --putStrLn $ "fakeIncomingTar params: dir=" ++ show dir ++ ", fileName=" ++ show fileName
+       createTar scriptShouldFail $ dir </> fileName
+       --showDir dir
 
 cleanUp dir =
     do removeDirectoryRecursive $ dir
@@ -154,13 +205,8 @@ incomingDir dir = dir </> "incoming"
 
 createTar :: Bool -> FilePath -> IO ()
 createTar scriptShouldFail destPath =
-    do --writeFile "./tmp/build.sh" content
-       --setFileMode "./tmp/build.sh" $ ownerReadMode
-       --setFileMode "./tmp/build.sh" $ ownerExecuteMode
-       --setFileMode "./tmp/build.sh" $ ownerReadMode `intersectFileModes` ownerExecuteMode
+    do --putStrLn $ "createTar parameters: destPath=" ++ destPath
        BS.writeFile destPath . Tar.write =<< ((liftM $ liftM $ setExecutable) $ Tar.pack baseDir filesToAdd)
-       --BS.writeFile destPath . Tar.write =<< Tar.pack baseDir filesToAdd
-       --removeFile "./tmp/build.sh"
     where
       baseDir =
           case scriptShouldFail of
@@ -173,17 +219,7 @@ createTar scriptShouldFail destPath =
             Tar.NormalFile _ _ -> entry{ Tar.entryPermissions = Tar.executableFilePermissions }
             _ -> entry
 
-{-
-test_getBuildQueue :: IO ()
-test_getBuildQueue = 
-    do clearBuildSystem
-       assertEqual ([] :: [BuildId])=<< getBuildQueue
-
-test_setBuildQueue = 
-    do setBuildQueue someBuildQueue 
-       assertEqual someBuildQueue =<< getBuildQueue
-    where
-        someBuildQueue = map BuildId [0..50]
--}
-
+showDir dir = 
+    do (_,stdOut,_) <- runProc (doLog LogInfo) "tree" [dir]
+       putStrLn stdOut
 --ms = 1000
