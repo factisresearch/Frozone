@@ -1,118 +1,136 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Frozone.Util.Concurrency.Scheduling.Model where
 
 import qualified Frozone.Util.Queue as Q
+import Frozone.Util.ErrorHandling
 
 --import Frozone.Util.ErrorHandling
 import qualified Data.Map as M
 
-import Control.Monad.STM
-import Control.Concurrent.STM.TVar
-import Control.Concurrent
-import Control.Monad
 import qualified Data.Foldable as F
 --import Control.Monad.Error
+import Control.Monad.State
+import Control.Monad.Error
+import Test.Framework
+
+type ErrMsg = String
 
 
 type Tasks a = Q.Queue (JobId, Task a)
-type Running a = M.Map JobId (Thread a)
+type Running a threadId = M.Map JobId (Thread a threadId)
 
 newtype JobId = JobId { fromJobId :: Int }
-    deriving (Show, Eq, Ord)
+    deriving (Show, Eq, Ord, Arbitrary)
 
 data JobState = JobWaiting | JobRunning | JobFinished
     deriving (Eq)
 
+
 newtype Task a = Task { fromTask :: a }
-    deriving (Eq)
-data Thread a
+    deriving (Eq, Arbitrary, Show)
+data Thread a threadId
     = Thread
     { thread_task :: Task a
-    , thread_id :: ThreadId
+    , thread_id :: threadId
+    }
+    deriving (Eq, Show)
+
+data SchedData a threadId 
+    = SchedData
+    { sched_maxThreads :: Int
+    , sched_tasks :: Tasks a
+    , sched_running :: Running a threadId
+    , sched_threadId :: Maybe threadId -- id of the scheduler thread, if running
+    , sched_jobCounter :: Int
     }
     deriving (Eq)
 
-data SchedData a
-    = SchedData
-    { sched_maxThreads :: Int
-    , sched_tasks :: TVar (Tasks a)
-    , sched_running :: TVar (Running a)
-    , sched_threadId :: Maybe ThreadId -- id of the scheduler thread, if running
-    , sched_jobCounter :: TVar Int
+emptySchedulerData :: Int -> SchedData a threadId
+emptySchedulerData maxThreads =
+    SchedData
+    { sched_maxThreads = maxThreads
+    , sched_tasks = Q.empty
+    , sched_running = M.empty
+    , sched_threadId = Nothing
+    , sched_jobCounter = 0
     }
 
-emptySchedulerData :: Int -> STM (SchedData a)
-emptySchedulerData maxThreads =
-    do
-        refTasks <- newTVar Q.empty
-        refRunning <- newTVar M.empty
-        refJobCounter <- newTVar 0
-        return $
-            SchedData
-            { sched_maxThreads = maxThreads
-            , sched_tasks = refTasks
-            , sched_running = refRunning
-            , sched_threadId = Nothing
-            , sched_jobCounter = refJobCounter
-            }
+mapToTasks f schedData = schedData{ sched_tasks = f (sched_tasks schedData) }
+mapToRunning f schedData = schedData{ sched_running = f (sched_running schedData) }
+mapToThreadId f schedData = schedData{ sched_threadId = f (sched_threadId schedData) }
+mapToJobCounter f schedData = schedData{ sched_jobCounter = f (sched_jobCounter schedData) }
 
-addToTasks :: SchedData a -> Task a -> STM JobId
-addToTasks SchedData{ sched_tasks = refTasks, sched_jobCounter = refCounter } task =
-    do jobId <- liftM JobId $ readTVar refCounter
-       modifyTVar refTasks (Q.put (jobId, task))
-       modifyTVar refCounter (+1)
-       return jobId
+setSchedulerThread :: threadId -> SchedData a threadId -> SchedData a threadId
+setSchedulerThread threadId schedData = schedData{ sched_threadId = Just threadId }
 
-removeJobFromModel :: SchedData a -> JobId -> STM (Maybe ())
-removeJobFromModel SchedData{ sched_tasks = refTasks, sched_running = refRunning } jobId =
-    do tasks <- readTVar refTasks
-       running <- readTVar refRunning
-       case (Q.filter (/=jobId) (fmap fst tasks) /= fmap fst tasks) of
+addToTasks :: Task a -> State (SchedData a threadId) JobId
+addToTasks task = state $ \schedData ->
+    let
+        jobId = JobId $ sched_jobCounter schedData
+        newSchedData =
+            mapToTasks (Q.put (jobId, task)) $
+            mapToJobCounter (+1) $
+            schedData
+    in (jobId, newSchedData)
+
+removeJobFromModel :: forall a threadId . JobId -> StateT (SchedData a threadId) (ErrM ErrMsg) (Maybe threadId)
+removeJobFromModel jobId = 
+    do model <- get
+       let tasks = sched_tasks model :: Tasks a
+           newTasks = Q.filter (\(jobId', _) -> jobId'/=jobId) tasks :: Tasks a
+       case (fmap fst newTasks /= fmap fst tasks) of
          True ->
-            do writeTVar refTasks $ Q.filter (\(jobId', _) -> jobId'/=jobId) tasks
-               return $ Just ()
-         False ->
-           if jobId `M.member` running
-           then
-             do writeTVar refRunning $ M.delete jobId running
-                return $ Just ()
-           else
-             return $ Nothing
+             do put $ model{ sched_tasks = newTasks }
+                return $ Nothing
+         False -> 
+             let running = sched_running model in
+             case M.lookup jobId running of
+               Just thread ->
+                   do put $ model{ sched_running = M.delete jobId running }
+                      return $ Just $ thread_id thread
+               Nothing ->
+                   lift $ throwError "job not found!"
 
-{- blocks until there is a new task, AND (#threads < threadMax), move next task from tasks to running -}
-nextToRunning :: SchedData a -> ThreadId -> STM (JobId, Task a)
-nextToRunning SchedData { sched_maxThreads = maxThreads, sched_tasks = refTasks, sched_running = refRunning } threadId =
-    do tasks <- readTVar refTasks
-       running <- readTVar refRunning
-       if (M.size running < maxThreads)
+{- if there is a task, AND (#threads < threadMax), move one task from "tasks" to "running" -}
+nextToRunning :: threadId -> State (SchedData a threadId) (Maybe (JobId, Task a))
+nextToRunning threadId =
+    do model <- get
+       let
+         tasks = sched_tasks model
+         running = sched_running model
+         maxThreads = sched_maxThreads model
+       if M.size running < maxThreads
          then
-             flip (maybe retry) (Q.take tasks) $ \((jobId, task), restTasks) ->
-             do writeTVar refTasks $ restTasks
-                writeTVar refRunning $ M.insert jobId (Thread { thread_task = task, thread_id = threadId }) $
-                    running
-                return (jobId, task)
-         else retry
+             flip (maybe (return Nothing)) (Q.take tasks) $ \((jobId,task), newTasks) ->
+             do put $
+                    mapToTasks (const newTasks) $
+                    mapToRunning (M.insert jobId (Thread { thread_task = task, thread_id = threadId })) $
+                    model
+                return $ Just (jobId, task)
+         else
+             return $ Nothing
+              
+getAllJobs :: SchedData a threadId -> ([JobId], [JobId]) -- (tasks, running)
+getAllJobs model =
+       let
+         tasks = F.toList $ fmap fst $ sched_tasks model
+         running = M.keys $ sched_running model
+       in
+         (tasks, running)
 
-removeFromRunning :: SchedData a -> JobId -> STM ()
-removeFromRunning SchedData{ sched_running = refRunning } jobId =
-    modifyTVar refRunning $ M.delete jobId
+getJob :: forall a threadId . JobId -> SchedData a threadId -> Maybe (Either (Task a) (Thread a threadId))
+getJob jobId model =
+    let
+        tasks = F.toList $ sched_tasks model
+        running = sched_running model
+    in
+        case lookup jobId $ F.toList tasks of
+          Just task -> Just $ Left $ task
+          Nothing ->
+              case M.lookup jobId running of
+                Just thread -> Just $ Right $ thread
+                Nothing -> Nothing
 
-getAllJobs :: SchedData a -> STM ([JobId], [JobId]) -- (tasks, running)
-getAllJobs SchedData{ sched_tasks = refTasks, sched_running = refRunning } =
-    do tasks <- return . F.toList . fmap fst =<< readTVar refTasks
-       running <- return . M.keys =<< readTVar refRunning
-       return (tasks, running)
-
-getJob :: forall a . SchedData a -> JobId -> STM (Maybe (Either (Task a) (Thread a)))
-getJob SchedData{ sched_tasks = refTasks, sched_running = refRunning } jobId =
-    do tasks <- readTVar refTasks
-       running <- readTVar refRunning
-       let mTask = liftM snd $ Q.get $ (Q.filter (\(jobId',_) -> jobId'==jobId)) tasks :: Maybe (Task a)
-       case mTask of
-         Just task ->
-             return $ Just $ Left $ task
-         Nothing ->
-           case M.lookup jobId running of
-             Just thread ->
-                 return $ Just $ Right $ thread
-             Nothing -> return $ Nothing
+instance Arbitrary JobState where
+    arbitrary = elements [JobWaiting, JobRunning, JobFinished]

@@ -41,14 +41,14 @@ import qualified Data.ByteString.Lazy as BS
 -}
 
 
-type SchedRef = Sched.SchedData
+type SchedRef = Sched.SchedRef BuildParams
 
 --type RefToBuildSystemState = TVar BuildSystemState
 
 
 data BuildSystemRef
     = BuildSystemRef
-    { buildSysRef_sched :: SchedRef BuildParams
+    { buildSysRef_sched :: SchedRef
     , buildSysRef_refModel :: TVar BuildSystemState
     , buildSysRef_config :: BuildSystemConfig
     }
@@ -125,7 +125,7 @@ restartBuild BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_sched 
 -- implementation using the ThreadMonadT:
 ------------------------------------------------------------------------------
 
-addBuildAction :: MonadIO m => SchedRef BuildParams -> BuildId -> TarFile -> ErrT (ThreadMonadT m) ()
+addBuildAction :: MonadIO m => SchedRef -> BuildId -> TarFile -> ErrT (ThreadMonadT m) ()
 addBuildAction refSched buildRepoId tarFile =
     do
        -- throw error if repository already exists:
@@ -150,7 +150,7 @@ getBuildQueueAction buildState =
     do model <- lift $ getModel
        return $ getBuildsInState buildState model
 
-stopAction :: MonadIO m => SchedRef BuildParams -> BuildId -> ErrT (ThreadMonadT m) ()
+stopAction :: MonadIO m => SchedRef -> BuildId -> ErrT (ThreadMonadT m) ()
 stopAction schedRef buildRepoId =
     do repo <- getRepo buildRepoId 
        case (br_thread repo) of
@@ -164,7 +164,7 @@ stopAction schedRef buildRepoId =
        modifyRepoAndLog buildRepoId $ mapToThread $ const Nothing
 
 
-restartBuildAction :: MonadIO m => SchedRef BuildParams -> BuildId -> ErrT (ThreadMonadT m) ()
+restartBuildAction :: MonadIO m => SchedRef -> BuildId -> ErrT (ThreadMonadT m) ()
 restartBuildAction refSched buildRepoId =
     do repo <- getRepo buildRepoId
        let

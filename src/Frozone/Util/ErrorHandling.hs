@@ -5,7 +5,9 @@ import Control.Monad.Identity
 
 
 --type ErrT m = ErrorT String m
-type ErrM err a = ErrorT err Identity a
+type ErrM err = ErrorT err Identity
+
+runError = runIdentity . runErrorT
 
 handleMaybe :: Maybe a -> b -> (a -> b) -> b
 handleMaybe mVal def f = maybe def f mVal

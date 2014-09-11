@@ -11,7 +11,7 @@ import Frozone.BuildTypes
 import Frozone.Util.Testing
 import Frozone.Util.Logging
 import Frozone.Util.Concurrency
-import Frozone.Util.Process
+--import Frozone.Util.Process
 
 import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Archive.Tar.Entry as Tar
@@ -181,6 +181,7 @@ test_getBuildQueue =
            fakeIncomingTar False (bsc_incoming config) "2.tar"
            _ <- assertSUCCESS $ bs_addBuild impl (BuildId 2) (TarFile "2.tar")
 
+           -- sometimes it misses build 2, why?!
            allBuilds <- mapM (bs_getBuildQueue impl) [BuildScheduled, Building, BuildSuccess, BuildFailed] :: IO [[BuildId]]
            assertEqual (map BuildId [0..2]) (join allBuilds)
 
@@ -247,7 +248,9 @@ createTar scriptShouldFail destPath =
             Tar.NormalFile _ _ -> entry{ Tar.entryPermissions = Tar.executableFilePermissions }
             _ -> entry
 
+{-
 showDir dir = 
     do (_,stdOut,_) <- runProc (doLog LogInfo) "tree" [dir]
        putStrLn stdOut
+-}
 --ms = 1000

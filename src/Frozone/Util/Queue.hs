@@ -18,7 +18,7 @@ import Control.Monad
 
 
 newtype Queue a = Queue { fromQueue :: S.Seq a }
-    deriving (Eq, Functor, F.Foldable)
+    deriving (Eq, Functor, F.Foldable, Show)
 
 empty = Queue $ S.empty
 
