@@ -28,7 +28,7 @@ prop_emptyIsValid maxThreads = isValidModel $ emptySchedulerData maxThreads
 prop_removeFromEmpty maxThreads jobId =
     let emptyModel = emptySchedulerData maxThreads :: SchedData Int Int
     in
-        (isError $ runStateT (removeJobFromModel jobId) emptyModel)
+        (isError $ runStateT (removeJob jobId) emptyModel)
 
 prop_nextToRunningOnEmpty maxThreads threadId =
     let emptyModel = emptySchedulerData maxThreads :: SchedData Int Int
@@ -55,8 +55,8 @@ prop_addToTasksPreservesModel schedData task =
     where
         _ = schedData :: SchedData Int Int
 
-prop_removeJobFromModel_preservesModel schedData jobId =
-    preservesValidModelOrErr (execStateT $ removeJobFromModel jobId) schedData
+prop_removeJob_preservesModel schedData jobId =
+    preservesValidModelOrErr (execStateT $ removeJob jobId) schedData
     where
         _ = schedData :: SchedData Int Int
 
@@ -79,9 +79,9 @@ prop_addToTasks schedData task =
     where
         _ = schedData :: SchedData Int Int
 
-prop_removeJobFromModel schedData jobId =
+prop_removeJob schedData jobId =
     let
-        mResAndNewModel = runStateT (removeJobFromModel jobId) schedData
+        mResAndNewModel = runStateT (removeJob jobId) schedData
     in
         case jobId `elem` allJobs schedData of
           False -> isLeft $ runError mResAndNewModel

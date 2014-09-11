@@ -56,10 +56,6 @@ emptySchedulerData maxThreads =
     , sched_jobCounter = 0
     }
 
-mapToTasks f schedData = schedData{ sched_tasks = f (sched_tasks schedData) }
-mapToRunning f schedData = schedData{ sched_running = f (sched_running schedData) }
-mapToThreadId f schedData = schedData{ sched_threadId = f (sched_threadId schedData) }
-mapToJobCounter f schedData = schedData{ sched_jobCounter = f (sched_jobCounter schedData) }
 
 setSchedulerThread :: threadId -> SchedData a threadId -> SchedData a threadId
 setSchedulerThread threadId schedData = schedData{ sched_threadId = Just threadId }
@@ -74,8 +70,8 @@ addToTasks task = state $ \schedData ->
             schedData
     in (jobId, newSchedData)
 
-removeJobFromModel :: forall a threadId . JobId -> StateT (SchedData a threadId) (ErrM ErrMsg) (Maybe threadId)
-removeJobFromModel jobId = 
+removeJob :: forall a threadId . JobId -> StateT (SchedData a threadId) (ErrM ErrMsg) (Maybe threadId)
+removeJob jobId = 
     do model <- get
        let tasks = sched_tasks model :: Tasks a
            newTasks = Q.filter (\(jobId', _) -> jobId'/=jobId) tasks :: Tasks a
@@ -131,6 +127,12 @@ getJob jobId model =
               case M.lookup jobId running of
                 Just thread -> Just $ Right $ thread
                 Nothing -> Nothing
+
+-- internal helper functions:
+mapToTasks f schedData = schedData{ sched_tasks = f (sched_tasks schedData) }
+mapToRunning f schedData = schedData{ sched_running = f (sched_running schedData) }
+mapToThreadId f schedData = schedData{ sched_threadId = f (sched_threadId schedData) }
+mapToJobCounter f schedData = schedData{ sched_jobCounter = f (sched_jobCounter schedData) }
 
 instance Arbitrary JobState where
     arbitrary = elements [JobWaiting, JobRunning, JobFinished]
