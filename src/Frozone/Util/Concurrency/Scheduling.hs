@@ -11,13 +11,15 @@ module Frozone.Util.Concurrency.Scheduling(
     removeJob,
     killAllJobs,
     waitForJob, waitForJobMaxTime,
+    waitForAll
 ) where
 
---import Frozone.Util.Concurrency.Scheduling.Model hiding (SchedData)
+import Frozone.Util.Concurrency.Scheduling.Model(Task, JobId, JobState(..))
 import qualified Frozone.Util.Concurrency.Scheduling.Model as Model
 
 import Frozone.Util.Concurrency
-import Frozone.Util.Logging
+import Frozone.Util.Logging( LogLevel(..) )
+import qualified Frozone.Util.Logging as Log
 import Frozone.Util.ErrorHandling
 --import qualified Frozone.Util.Queue as Q
 --import qualified Data.Map as M
@@ -35,38 +37,43 @@ import Control.Concurrent
 class (MonadIO m) => Forkable m where
     fork :: m () -> m ThreadId
 
+instance Forkable IO where
+    fork = forkIO
+
 --newtype SchedData a = SchedData { fromSchedData :: Model.SchedData a ThreadId }
 newtype SchedRef a = SchedRef { fromSchedRef :: TVar (Model a) }
 
 type Model a = Model.SchedData a ThreadId
+{-
 type Task a = Model.Task a
 type JobId = Model.JobId
 type JobState = Model.JobState
+-}
 type ErrMsg = Model.ErrMsg
 
 
 runScheduler :: Forkable m => Int -> (a -> m ()) -> m (SchedRef a)
 runScheduler maxThreads f =
-    do doLog LogInfo $ "SCHEDULER: runScheduler"
+    do doLog LogInfo $ "runScheduler"
        refModel <- liftIO $ atomically $
            liftM SchedRef $ newTVar $ Model.emptySchedulerData maxThreads
        threadId <- fork (scheduler refModel f)
-       doLog LogInfo $ "SCHEDULER: end of runScheduler"
+       doLog LogInfo $ "end of runScheduler"
        liftIO $ atomically $
            modifySchedData refModel $ modify $ Model.setSchedulerThread threadId
        return refModel
 
 {- |this stops the scheduler thread. If you want to kill all jobs as well, use killAllJobs before -}
-stopScheduler :: (SchedRef a) -> ErrorT ErrMsg IO ()
+stopScheduler :: SchedRef a -> IO ()
 stopScheduler schedRef =
-    do mThreadId <- lift $ return . Model.sched_threadId =<< atomically (readTVar $ fromSchedRef schedRef)
-       doLog LogInfo $ "SCHEDULER: stop"
+    do mThreadId <- return . Model.sched_threadId =<< atomically (readTVar $ fromSchedRef schedRef)
+       doLog LogInfo $ "stop"
        case mThreadId of
-         Nothing -> throwError "scheduler not running!"
+         Nothing -> doLog LogError "consistency error: scheduler not running!"
          Just threadId ->
-             do doLog LogInfo $ "SCHEDULER: killing scheduler thread"
-                lift $ killThread threadId
-       doLog LogInfo $ "SCHEDULER: end of stop"
+             do doLog LogInfo $ "killing scheduler thread"
+                killThread threadId
+       doLog LogInfo $ "end of stop"
 
 scheduler :: Forkable m => SchedRef a -> (a -> m b) -> m ()
 scheduler schedRef f =
@@ -76,13 +83,13 @@ scheduler schedRef f =
        (jobId, nextTask) <- liftIO $ atomically $
            do mStartedJob <- modifySchedData schedRef $ Model.nextToRunning threadId
               handleMaybe mStartedJob retry return
-       doLog LogInfo $ "SCHEDULER: adding " ++ show jobId
+       doLog LogInfo $ "adding " ++ show jobId
        fork $
            do f $ Model.fromTask nextTask
               err <- liftIO $ atomically $ modifySchedDataErr schedRef $ Model.removeJob jobId
               handleEither (runError err)
-                  (const $ doLog LogInfo $ "SCHEDULER: consistency error while removing job")
-                  (const $ doLog LogInfo $ "SCHEDULER: finished job " ++ show jobId)
+                  (const $ doLog LogInfo $ "consistency error while removing job")
+                  (const $ doLog LogInfo $ "finished job " ++ show jobId)
 
 
 addTask :: SchedRef a -> Task a -> IO JobId
@@ -110,15 +117,40 @@ killAllJobs schedRef =
        mapM_ killThread $ catMaybes $ rights $ temp
 
 waitForJobMaxTime :: SchedRef a -> TimeMs -> JobState -> JobId -> IO AwaitRes
-waitForJobMaxTime = undefined
+waitForJobMaxTime schedRef maxTime jobState jobId =
+    case jobState of
+      JobWaiting -> awaitMaxTime maxTime (\model -> isJustLeft $ Model.getJob jobId model) (fromSchedRef schedRef)
+      JobRunning -> awaitMaxTime maxTime (\model -> isJustRight $ Model.getJob jobId model) (fromSchedRef schedRef)
+      JobFinished -> awaitMaxTime maxTime (\model -> isNothing $ Model.getJob jobId model) (fromSchedRef schedRef)
+    where
+        isJustLeft (Just (Left _)) = True
+        isJustLeft _ = False
+        isJustRight (Just (Right _)) = True
+        isJustRight _ = False
 
 waitForJob :: SchedRef a -> JobState -> JobId -> IO ()
-waitForJob = undefined
+waitForJob schedRef jobState jobId =
+    case jobState of
+      JobWaiting -> atomically $ await (\model -> isJustLeft $ Model.getJob jobId model) (fromSchedRef schedRef)
+      JobRunning -> atomically $ await (\model -> isJustRight $ Model.getJob jobId model) (fromSchedRef schedRef)
+      JobFinished -> atomically $ await (\model -> isNothing $ Model.getJob jobId model) (fromSchedRef schedRef)
+    where
+        isJustLeft (Just (Left _)) = True
+        isJustLeft _ = False
+        isJustRight (Just (Right _)) = True
+        isJustRight _ = False
 
+
+waitForAll :: SchedRef a -> IO ()
+waitForAll schedRef = 
+    do allJobs <- atomically ( return . uncurry (++) =<< return . Model.getAllJobs =<< readTVar (fromSchedRef schedRef))
+       mapM_ (waitForJob schedRef JobFinished) $ allJobs
 
 -----------------------------------------------------------------------------
 -- Internals
 -----------------------------------------------------------------------------
+
+doLog logLevel msg = Log.doLog logLevel $ "SCHEDULER: " ++ msg
 
 modifySchedData :: SchedRef a -> (State (Model a) res) -> STM res
 modifySchedData schedRef stateTransf = 
@@ -132,72 +164,10 @@ modifySchedDataErr :: forall err a res . Error err => SchedRef a -> StateT (Mode
 modifySchedDataErr schedRef stateTransf =
     do let ref = fromSchedRef schedRef
        model <- readTVar ref
-       let errOrResAndNewModel = runError $ runStateT stateTransf model -- :: (Either err (res, (SchedData a)))
-       --errOrResAndNewModel <- return $ mNewRes
+       let errOrResAndNewModel = runError $ runStateT stateTransf model
        case errOrResAndNewModel of
          Left err ->
              return $ throwError err
          Right (res, newModel) -> 
              do writeTVar ref newModel
                 return $ return $ res
-
-{-
-waitForJobMaxTime :: SchedData a -> TimeMs -> JobState -> JobId -> IO AwaitRes
-waitForJobMaxTime schedData maxTime jobState jobId =
-    case jobState of
-      JobWaiting ->
-          awaitMaxTime
-            maxTime
-            (\tasks -> not $ Q.null $ Q.filter (\(jobId',_) -> jobId' == jobId) $ tasks)
-            (sched_tasks schedData)
-      JobRunning -> awaitMaxTime maxTime (M.member jobId) (sched_running schedData)
-      JobFinished ->
-          awaitMaxTime maxTime (not . M.member jobId) (sched_running schedData)
-
-waitForJob :: SchedData a -> JobState -> JobId -> IO ()
-waitForJob schedData jobState jobId =
-    case jobState of
-      JobWaiting ->
-          atomically $ await
-            (\tasks -> not $ Q.null $ Q.filter (\(jobId',_) -> jobId' == jobId) $ tasks)
-            (sched_tasks schedData)
-      JobRunning ->
-          atomically $
-              await (M.member jobId) (sched_running schedData)
-      JobFinished ->
-          atomically $
-              await (not . M.member jobId) (sched_running schedData)
-
-killAllJobs :: SchedData a -> IO ()
-killAllJobs schedData =
-    do allThreadIds <-
-           atomically $
-           do (tasks, running) <- getAllJobs schedData
-              mapM (removeJobPrivate schedData) $ tasks
-              mapM (removeJobPrivate schedData) $ running
-       mapM_ killThread $ catMaybes $ rights allThreadIds
-
-removeJobPrivate schedData jobId =
-    do mTaskOrThread <- getJob schedData jobId
-       case mTaskOrThread of
-         Nothing -> return $ Left $ "job " ++ show jobId ++ " not found!" :: STM (Either ErrMsg (Maybe ThreadId))
-         Just taskOrThread ->
-             case taskOrThread of
-               Left _ ->
-                 do removeJobFromModel schedData jobId
-                    return $ Right $ Nothing
-               Right thread -> 
-                 do removeJobFromModel schedData jobId
-                    return $ Right $ Just $ thread_id thread
--}
- 
-{-
-waitForAll :: TVar (Tasks a) -> TVar (Running a) -> IO ()
-waitForAll refTasks refRunning =
-    atomically $
-    do tasks <- readTVar refTasks
-       running <- readTVar refRunning
-       if not (Q.null tasks && M.null running)
-         then retry
-         else return ()
--}

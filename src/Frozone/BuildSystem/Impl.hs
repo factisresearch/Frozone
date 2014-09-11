@@ -82,7 +82,7 @@ stopBuildSystem ref =
     do doLog LogInfo $ "stopBuildSystem called: killing all running builds"
        lift $ Sched.killAllJobs $ buildSysRef_sched ref
        doLog LogInfo $ "stopping scheduler..."
-       Sched.stopScheduler $ buildSysRef_sched ref
+       lift $ Sched.stopScheduler $ buildSysRef_sched ref
        doLog LogInfo $ "finished ."
 
 ------------------------------------------------------------------------------

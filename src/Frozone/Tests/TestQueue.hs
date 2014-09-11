@@ -40,15 +40,20 @@ prop_get q =
         _ = (q :: Q.Queue Int)
 
 prop_onlyDeleteWhenInQ x q =
-    (x `elem` toList q) ==> isJust (Q.delete x q)
+    let deleteRes = (Q.delete x q)
+    in
+        if x `elem` toList q
+          then isJust deleteRes
+          else isNothing deleteRes
     where
         _ = (x :: Int)
 
 prop_delete x q =
-    let deleted = Q.delete x q
+    let deleteRes = Q.delete x q
     in
-        isJust deleted ==>
-            toList (fromJust deleted) == filter (/=x) (toList q)
+        if (isJust deleteRes)
+         then toList (fromJust deleteRes) == filter (/=x) (toList q)
+         else True
     where
         _ = x :: Int
 
