@@ -4,31 +4,37 @@ module Frozone.PackageManager.Connection(
     pkgManByConnection,
 ) where
 
+import Frozone.BuildTypes
 import Frozone.PackageManager.API
+
+import Control.Monad.Reader
 
 pkgManByConnection :: Connection -> PackageManager
 pkgManByConnection conn = 
     PackageManager
-    { pkgMan_addPatchBundle = addPatchBundle conn
-    , pkgMan_listMicroBranches = listMicroBranches conn
-    , pkgMan_getBuildRepository = getBuildRepository conn
+    { pkgMan_addPatchBundle = \patchBundle -> runReaderT (addPatchBundle patchBundle) conn
+    , pkgMan_listMicroBranches = runReaderT listMicroBranches conn
+    , pkgMan_getBuildRepository = \microBranchInfo -> runReaderT (getBuildRepository microBranchInfo) conn
     }
 
 data ConnectionInfo
     = ConnectionInfo
-    { connection_host :: String
-    , connection_port :: Int
+    { connInf_host :: String
+    , connInf_port :: Int
     }
 data Connection = Connection
 
 connect :: ConnectionInfo -> IO Connection
-connect _ = undefined
+connect _ = return Connection
 
 disconnect :: Connection -> IO ()
-disconnect _ = undefined
+disconnect _ = return ()
 
+addPatchBundle :: PatchBundle -> ReaderT Connection IO ()
 addPatchBundle _ = undefined
 
-listMicroBranches _ = undefined
+listMicroBranches :: ReaderT Connection IO [MicroBranchInfo]
+listMicroBranches = undefined
 
+getBuildRepository :: MicroBranchInfo -> ReaderT Connection IO TarFile
 getBuildRepository _ = undefined

@@ -9,7 +9,7 @@
 {-# LANGUAGE EmptyDataDecls #-}
 module Frozone.UserManagement.Model where
 
-import Frozone.PackageManager as PM
+import Frozone.PackageManager.API as PM
 
 import Control.Monad
 

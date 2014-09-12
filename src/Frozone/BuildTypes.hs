@@ -3,8 +3,14 @@
 module Frozone.BuildTypes where
 
 --import System.FilePath
+import qualified Data.Text as T
 
-data MicroBranchInfo = MicroBranchInfo
+data MicroBranchInfo
+    = MicroBranchInfo
+    { microBranch_id :: T.Text -- could be a hash
+    , microBranch_user :: T.Text
+    , microBranch_describtion :: T.Text
+    }
     deriving (Show)
 
 data TarFile = TarFile { fromTarFile :: FilePath }

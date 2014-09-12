@@ -1,7 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE Rank2Types #-}
 module Frozone.BuildSystem.Impl(
-    BuildSystemConfig(..),
+    BuildSystemConfig(..), BuildSystemRef(),
     buildSysImpl,
     startBuildSystem, stopBuildSystem,
     --just for testing: 
@@ -77,12 +77,12 @@ startBuildSystem config =
            , buildSysRef_config = config
            }
 
-stopBuildSystem :: BuildSystemRef -> ErrorT ErrMsg IO ()
+stopBuildSystem :: BuildSystemRef -> IO ()
 stopBuildSystem ref =
     do doLog LogInfo $ "stopBuildSystem called: killing all running builds"
-       lift $ Sched.killAllJobs $ buildSysRef_sched ref
+       Sched.killAllJobs $ buildSysRef_sched ref
        doLog LogInfo $ "stopping scheduler..."
-       lift $ Sched.stopScheduler $ buildSysRef_sched ref
+       Sched.stopScheduler $ buildSysRef_sched ref
        doLog LogInfo $ "finished ."
 
 ------------------------------------------------------------------------------
