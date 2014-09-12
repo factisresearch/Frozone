@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -F -pgmF htfpp #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 module Frozone.Tests.TestScheduler_Model(
     htf_thisModulesTests
 ) where
@@ -169,7 +170,7 @@ instance (Arbitrary a, Arbitrary threadId) => Arbitrary (SchedData a threadId) w
         do maxThreads <- return . getPositive =<< arbitrary
            tasks <- arbitrary -- :: Gen [Task a]
            randomSeed <- arbitrary
-           threadIds <- listOf $ arbitrary
+           threadIds <- listOf $ arbitrary -- :: [threadId]
            let
              (taskList, runningListX) =
                  evalRand (randomDivide (map JobId [0..] `zip` tasks))
@@ -177,7 +178,7 @@ instance (Arbitrary a, Arbitrary threadId) => Arbitrary (SchedData a threadId) w
              runningListY = zipWith (\(a,b) c -> (a,b,c)) runningListX threadIds
              runningList = map (\(jobId, task, threadId) -> (jobId, Thread task threadId)) runningListY
            jobCounter <-
-               return . (+ (length runningList + length taskList))
+               return . (+ length tasks)
                =<< return . getPositive
                =<< arbitrary
            threadId <- arbitrary
@@ -190,9 +191,9 @@ instance (Arbitrary a, Arbitrary threadId) => Arbitrary (SchedData a threadId) w
                , sched_jobCounter = jobCounter
                 }
 
-randomDivide :: (MonadRandom m) => [a] -> m ([a],[a])
+randomDivide :: forall m a . (MonadRandom m) => [a] -> m ([a],[a])
 randomDivide values =
-    do listOfBools <- getRandoms
+    do listOfBools <- getRandoms :: m [Bool]
        return $
            partitionEithers $ 
            zipWith zipF values listOfBools
