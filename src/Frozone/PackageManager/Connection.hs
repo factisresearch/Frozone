@@ -1,6 +1,10 @@
-module Frozone.PkgManConnection where
+module Frozone.PackageManager.Connection(
+    Connection(), ConnectionInfo(..),
+    connect, disconnect,
+    pkgManByConnection,
+) where
 
-import Frozone.PackageManager
+import Frozone.PackageManager.API
 
 pkgManByConnection :: Connection -> PackageManager
 pkgManByConnection conn = 
@@ -12,8 +16,8 @@ pkgManByConnection conn =
 
 data ConnectionInfo
     = ConnectionInfo
-    { host :: String
-    , port :: Int
+    { connection_host :: String
+    , connection_port :: Int
     }
 data Connection = Connection
 

@@ -7,7 +7,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE EmptyDataDecls #-}
-module Frozone.Model where
+module Frozone.UserManagement.Model where
 
 import Frozone.PackageManager as PM
 

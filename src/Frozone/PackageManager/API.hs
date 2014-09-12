@@ -1,4 +1,4 @@
-module Frozone.PackageManager where
+module Frozone.PackageManager.API where
 
 import Frozone.BuildTypes
 

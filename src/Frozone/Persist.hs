@@ -1,5 +1,6 @@
 module Frozone.Persist where
 
+{-
 import qualified Frozone.Model as Model
 
 type Model = Model.UserManagementData
@@ -26,4 +27,5 @@ data Persist
     = Persist
     { 
     }
+-}
 -}

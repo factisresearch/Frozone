@@ -3,8 +3,8 @@ module Main where
 
 import Frozone.Util.ErrorHandling
 --import Frozone.Model
-import qualified Frozone.PkgManConnection as PkgManConn
-import qualified Frozone.Persist as Persist
+import qualified Frozone.PackageManager.Connection as PkgManConn
+--import qualified Frozone.Persist as Persist
 import qualified Frozone.Controller as Controller
 
 import System.Environment
@@ -27,7 +27,7 @@ main =
 initFrozone :: FrozoneConfig -> IO FrozoneState
 initFrozone fc =
     let pkgManConnInfo = fc_pkgManConnInfo fc in
-    do Persist.startPersistence
+    do --Persist.startPersistence
        connection <- PkgManConn.connect pkgManConnInfo
        return $
            FrozoneState
