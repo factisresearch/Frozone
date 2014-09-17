@@ -7,7 +7,7 @@ import Control.Monad.Error
 
 data BuildSystem
     = BuildSystem
-    { bs_addBuild :: BuildId -> TarFile -> ErrorT ErrMsg IO () -- > BuildScheduled ... BuildPreparing ... Building ... BuildSuccess|BuildFailed
+    { bs_addBuild :: BuildId -> Tar -> ErrorT ErrMsg IO () -- > BuildScheduled ... BuildPreparing ... Building ... BuildSuccess|BuildFailed
     , bs_getBuildRepositoryState :: BuildId -> ErrorT ErrMsg IO BuildState -- for any known Build: return its state
 
     --, bs_startBuild :: BuildId -> ErrorT ErrMsg IO () -- BuildReady -> BuildScheduled ... Building ... BuildSuccess|BuildFailed

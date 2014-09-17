@@ -1,6 +1,6 @@
 pkgManConn:
   host: localhost
-  port: 8080
+  port: 20000
 buildSysConfig:
   baseDir: workDir
   incoming: incoming

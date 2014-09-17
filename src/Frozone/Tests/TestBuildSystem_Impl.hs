@@ -23,7 +23,8 @@ import Control.Exception
 import System.Directory
 import System.FilePath
 import System.Random
-import qualified Data.ByteString.Lazy as BS
+--import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSLazy
 
 import Test.Framework
 
@@ -34,10 +35,10 @@ test_add =
     bracket (startBuildSystem config) stopBuildSystem $ \bs ->
         do let impl = buildSysImpl bs
 
-           fakeIncomingTar False (bsc_incoming config) "test.tar"
+           tar <- fakeIncomingTar False
            _ <- assertERROR $ bs_getBuildRepositoryState impl $ BuildId 0
 
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar
            state <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
            when (not $ state `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
@@ -54,14 +55,14 @@ test_addTwice =
     bracket (startBuildSystem config) (stopBuildSystem) $ \bs ->
         do let impl = buildSysImpl bs
 
-           fakeIncomingTar False (bsc_incoming config) "test.tar"
+           tar <- fakeIncomingTar False
 
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar
            state <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
            when (not $ state `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
            -- adding the same build again should give an error!
-           _ <- assertERROR $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
+           _ <- assertERROR $ bs_addBuild impl (BuildId 0) tar
 
            waitRes <- assertSUCCESS $
                awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId 0) (buildSysRef_refModel bs)
@@ -75,9 +76,9 @@ test_addThenRebuild =
     bracket (startBuildSystem config) (stopBuildSystem) $ \bs ->
         do let impl = buildSysImpl bs
 
-           fakeIncomingTar False (bsc_incoming config) "test.tar"
+           tar <- fakeIncomingTar False
 
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar
            state <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
            when (not $ state `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
@@ -86,7 +87,7 @@ test_addThenRebuild =
            assertEqual StateReached waitRes
 
            -- trying to start a build that has already been finished should give an error!
-           _ <- assertERROR $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
+           _ <- assertERROR $ bs_addBuild impl (BuildId 0) tar
            -- use bs_restart for this case:
            _ <- assertSUCCESS $ bs_restartBuild impl (BuildId 0)
 
@@ -97,8 +98,9 @@ test_stop =
     withConfig $ \config ->
     bracket (startBuildSystem config) (stopBuildSystem) $ \bs ->
         do let impl = buildSysImpl bs
+           tar <- fakeIncomingTar False
 
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "test.tar")
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar
            _ <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
 
            -- this is not a good test. could be the build is already finished...
@@ -120,8 +122,8 @@ test_build =
 
            doLog LogInfo $ "starting build 0..."
            -- building this repository should FAIL:
-           fakeIncomingTar True (bsc_incoming config) "0.tar"
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "0.tar")
+           tar0 <- fakeIncomingTar True
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar0 
            state_0 <- assertSUCCESS $ bs_getBuildRepositoryState impl (BuildId 0) 
            when (not $ state_0 `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
@@ -133,8 +135,8 @@ test_build =
 
            doLog LogInfo $ "starting build 1..."
            -- building this repository should work:
-           fakeIncomingTar False (bsc_incoming config) "1.tar"
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 1) (TarFile "1.tar")
+           tar1 <- fakeIncomingTar False
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 1) tar1 
            state_1 <- assertSUCCESS $ bs_getBuildRepositoryState impl (BuildId 1) 
            when (not $ state_1 `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
@@ -153,12 +155,12 @@ test_concurrentBuilds =
     bracket (startBuildSystem config) (stopBuildSystem) $ \bs ->
         do let impl = buildSysImpl bs
 
-           fakeIncomingTar False (bsc_incoming config) "0.tar"
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "0.tar")
-           fakeIncomingTar False (bsc_incoming config) "1.tar"
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 1) (TarFile "1.tar")
-           fakeIncomingTar False (bsc_incoming config) "2.tar"
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 2) (TarFile "2.tar")
+           tar0 <- fakeIncomingTar False
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar0
+           tar1 <- fakeIncomingTar False
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 1) tar1
+           tar2 <- fakeIncomingTar False
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 2) tar2
 
            waitRes <- assertSUCCESS $ awaitMaxTimeOrErr 2000 cond (buildSysRef_refModel bs)
            assertEqual StateReached $ waitRes
@@ -174,14 +176,14 @@ test_getBuildQueue =
     bracket (startBuildSystem config) (stopBuildSystem) $ \bs ->
         do let impl = buildSysImpl bs
 
-           fakeIncomingTar False (bsc_incoming config) "0.tar"
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) (TarFile "0.tar")
-           fakeIncomingTar False (bsc_incoming config) "1.tar"
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 1) (TarFile "1.tar")
-           fakeIncomingTar False (bsc_incoming config) "2.tar"
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 2) (TarFile "2.tar")
+           tar0 <- fakeIncomingTar False
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar0
+           tar1 <- fakeIncomingTar False
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 1) tar1
+           tar2 <- fakeIncomingTar False
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 2) tar2
 
-           -- sometimes it misses build 2, why?!
+           -- sometimes it misses one build, why?!
            allBuilds <- mapM (bs_getBuildQueue impl) [BuildScheduled, Building, BuildSuccess, BuildFailed] :: IO [[BuildId]]
            assertEqual (map BuildId [0..2]) (join allBuilds)
 
@@ -220,9 +222,9 @@ initTest dir =
        createDirectory $ incomingDir dir
        --showDir dir
 
-fakeIncomingTar scriptShouldFail dir fileName =
+fakeIncomingTar scriptShouldFail =
     do --putStrLn $ "fakeIncomingTar params: dir=" ++ show dir ++ ", fileName=" ++ show fileName
-       createTar scriptShouldFail $ dir </> fileName
+       createTar scriptShouldFail 
        --showDir dir
 
 cleanUp dir =
@@ -232,10 +234,11 @@ cleanUp dir =
 bsBaseDir dir = dir </> "build-repos"
 incomingDir dir = dir </> "incoming"
 
-createTar :: Bool -> FilePath -> IO ()
-createTar scriptShouldFail destPath =
+createTar :: Bool -> IO Tar
+createTar scriptShouldFail =
     do --putStrLn $ "createTar parameters: destPath=" ++ destPath
-       BS.writeFile destPath . Tar.write =<< ((liftM $ liftM $ setExecutable) $ Tar.pack baseDir filesToAdd)
+       return . Tar . BSLazy.toStrict . Tar.write =<< ((liftM $ liftM $ setExecutable) $ Tar.pack baseDir filesToAdd)
+       --BS.writeFile destPath . Tar.write =<< ((liftM $ liftM $ setExecutable) $ Tar.pack baseDir filesToAdd)
     where
       baseDir =
           case scriptShouldFail of

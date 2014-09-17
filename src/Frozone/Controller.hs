@@ -9,9 +9,9 @@ import Frozone.BuildSystem.API as BuildSys
 import Frozone.Util.Logging hiding (doLog)
 import qualified Frozone.Util.Logging as Log
 
-
 import Control.Monad.Reader
 import Control.Monad.Error
+import Control.Concurrent
 
 --import Data.Either
 
@@ -23,21 +23,27 @@ data ControllerData
     --, froz_userManagement :: UserMan.UserManagement
     }
 
+{-
 runController :: PackageManager -> BuildSystem -> IO ()
 runController _ _ =
     do doLog LogInfo "runController called"
        doLog LogInfo "end of runController"
-{-
+-}
 runController packMan buildSys =
     do doLog LogInfo "runController called"
-       runReaderT runController' (ControllerData packMan buildSys)
+       --forever $
+       id $ 
+           do
+              putStrLn $ "-------------------------------------------------------------------"
+              runReaderT runController' (ControllerData packMan buildSys)
+              threadDelay 10000000
        doLog LogInfo "end of runController"
--}
 
 runController' :: ContrM IO ()
 runController' =
     do packMan <- asks froz_packageMan
        microBranches <- lift $ pkgMan_listMicroBranches packMan
+       --doLog LogInfo $ show microBranches
        mapM_ (lift . handleBuildResp <=< runErrorT . possiblyBuildMicroBranch) $
            microBranches
     where
@@ -98,7 +104,7 @@ data ControllerState
     { controller_
 -}
 
-doLog logLevel msg = Log.doLog logLevel $ "Controller: " ++ msg
+doLog logLevel msg = Log.doLog logLevel $ "CONTROLLER: " ++ msg
 
 handleError' :: ContrM (ErrorT ErrMsg IO) a -> ContrM IO (Either ErrMsg a)
 handleError' mx = 

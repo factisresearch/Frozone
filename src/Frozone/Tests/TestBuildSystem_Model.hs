@@ -4,7 +4,7 @@ module Frozone.Tests.TestBuildSystem_Model(
 ) where
 
 import Test.Framework
-import Frozone.BuildTypes
+--import Frozone.BuildTypes
 import Frozone.Util.Testing
 
 import Frozone.BuildSystem.API
@@ -12,12 +12,12 @@ import Frozone.BuildSystem.Intern.Model
 
 
 test_AddBuildRepository =
-    do assertSUCCESS $ addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing (TarFile "dummy.tar")) emptyBuildSystemState
+    do assertSUCCESS $ addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing "dummy.tar") emptyBuildSystemState
 
 test_AddBuildRepositoryTwice =
     assertERROR $
-        addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing (TarFile "dummy.tar")) 
-        =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing (TarFile "dummy.tar")) emptyBuildSystemState
+        addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing "dummy.tar") 
+        =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing "dummy.tar") emptyBuildSystemState
 
 test_DeleteBuildRepository =
     assertERROR $
@@ -27,12 +27,12 @@ test_DeleteBuildRepository =
 test_AddAndDeleteBuildRepository =
     assertSUCCESS $
         deleteBuildRepository (BuildId 0) 
-        =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing (TarFile "dummy.tar")) emptyBuildSystemState
+        =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing "dummy.tar") emptyBuildSystemState
 
 test_getBuildsInState =
     do let allLists = map (flip getBuildsInState emptyBuildSystemState) allBuildStates
        mapM (assertEqual []) allLists
-       buildSys <- assertSUCCESS $ addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing (TarFile "dummy.tar")) emptyBuildSystemState
+       buildSys <- assertSUCCESS $ addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing "dummy.tar") emptyBuildSystemState
        assertEqual [(BuildId 0)] $ getBuildsInState BuildPreparing buildSys
 
 test_mapToBuildState =
@@ -40,7 +40,7 @@ test_mapToBuildState =
         (mapToBuildState (const BuildSuccess) $ originalBuildRep)
         (originalBuildRep{ br_buildState = BuildSuccess })
     where
-        originalBuildRep = buildRepository path BuildPreparing (TarFile "dummy.tar")
+        originalBuildRep = buildRepository path BuildPreparing "dummy.tar"
         path = Just "test/bla"
 
 --        =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing) emptyBuildSystemState

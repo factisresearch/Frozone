@@ -2,7 +2,6 @@ module Frozone.BuildSystem.Intern.Model where
 
 import Frozone.BuildSystem.API
 import qualified Frozone.Util.Concurrency.Scheduling as Sched
-import Frozone.BuildTypes
 
 import qualified Data.Map.Strict as M
 
@@ -23,11 +22,12 @@ data BuildRepository
     = BuildRepository
     { br_path :: Maybe FilePath -- relative to bsc_baseDir (!)
     , br_buildState :: BuildState
-    , br_incoming :: TarFile
+    , br_incoming :: TarFilePath
     , br_thread :: Maybe Sched.JobId
     }
   deriving (Show, Eq)
 
+type TarFilePath = FilePath
 
 emptyBuildSystemState =
     BuildSystemState

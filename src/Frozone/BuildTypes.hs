@@ -3,21 +3,73 @@
 module Frozone.BuildTypes where
 
 --import System.FilePath
-import qualified Data.Text as T
+--import qualified Data.Text as T
 
+{-
 data MicroBranchInfo
     = MicroBranchInfo
     { microBranch_id :: T.Text -- could be a hash
     , microBranch_user :: T.Text
     , microBranch_describtion :: T.Text
+    , microBranch_dependencyInfo :: DependencyInfo
     }
-    deriving (Show)
-
-data TarFile = TarFile { fromTarFile :: FilePath }
     deriving (Show, Eq)
 
+
 data PatchBundle = PatchBundle
-    deriving (Show)
+    deriving (Show, Eq)
+
+data DependencyInfo = DependencyInfo
+    deriving (Show, Eq)
+-}
+
+
+import Frozone.Util.Json
+import Data.Aeson.TH
+
+import qualified Data.ByteString as BS
+
+
+newtype PatchID = PatchID { unPatchID :: String }
+                deriving (Eq,Ord,Show,Read)
+
+data MicroBranchInfo
+    = MicroBranchInfo
+    { microBranch_id :: MicroBranchHash
+    , microBranch_name :: String -- name/describtion of the corresponding patch
+    , microBranch_user :: String -- author of the patch
+    , microBranch_describtion :: String -- some additional info (dependency information, ...) in text form
+    }
+    deriving (Show, Eq)
+
+data MicroBranchHash
+    = MicroBranchHash
+    { microBranchHash_dpm :: PatchID
+    , microBranchHash_extension :: String
+    }
+    deriving (Show, Read, Eq, Ord)
+
+data Tar = Tar { fromTar :: BS.ByteString }
+    deriving (Show, Eq)
+
+microBranchHashToString :: MicroBranchHash -> String
+microBranchHashToString hash = unPatchID (microBranchHash_dpm hash) ++ "_" ++ microBranchHash_extension hash
+
+microBranchHashFromString :: String -> Maybe MicroBranchHash
+microBranchHashFromString str =
+    case split str of
+      ([],_) -> Nothing
+      (_,[]) -> Nothing
+      (dpmHash, extension) -> Just $ MicroBranchHash (PatchID dpmHash) extension
+      where
+          split str' =
+              let (x,y) = span (/='_') str'
+              in (x, drop 1 y)
+
+$(deriveJSON (defaultOptions{ fieldLabelModifier = dropPrefix }) ''PatchID)
+$(deriveJSON (defaultOptions{ fieldLabelModifier = dropPrefix }) ''MicroBranchHash)
+
+$(deriveJSON (defaultOptions{ fieldLabelModifier = dropPrefix }) ''MicroBranchInfo)
 
 {-
 import Frozone.Model

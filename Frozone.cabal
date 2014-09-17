@@ -59,7 +59,8 @@ executable Frozone
                        wai-extra >=3.0 && <3.1,
                        wai-middleware-static >=0.6 && <0.7,
                        yaml >=0.8 && <0.9,
-                       HTF == 0.11.*
+                       HTF == 0.11.*,
+                       http-client
   hs-source-dirs:      src
   ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures -fno-warn-unused-do-bind -threaded
 

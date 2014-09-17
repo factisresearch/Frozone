@@ -1,6 +1,6 @@
-{-# LANGUAGE TemplateHaskell #-}
 module Main where
 
+import Frozone.Config
 import Frozone.Util.ErrorHandling
 --import Frozone.Model
 import qualified Frozone.PackageManager.Connection as PkgManConn
@@ -9,8 +9,8 @@ import qualified Frozone.BuildSystem.Impl as BuildSys
 import qualified Frozone.Controller as Controller
 
 import System.Environment
+import Control.Exception
 import qualified Data.Yaml as YML
-import Frozone.Util.Json
 
 main :: IO ()
 main =
@@ -19,11 +19,8 @@ main =
        case eConfig of
          Left err -> putStrLn err
          Right cfg ->
-             do fs <- initFrozone cfg
-                --threadDelay 2000000
-                runFrozone fs
-                exitFrozone fs
-
+             bracket (initFrozone cfg) exitFrozone
+                 runFrozone
 
 initFrozone :: FrozoneConfig -> IO FrozoneState
 initFrozone fc =
@@ -64,17 +61,3 @@ parseArgs args =
           return $ Left $ usageStr
 
 usageStr = "Usage: ./Frozone [cfgFile]"
-
-
-
---controllerStateFromFrozoneState _ = Controller.ControllerState
-
-data FrozoneConfig
-    = FrozoneConfig
-    { fc_pkgManConn :: PkgManConn.ConnectionInfo
-    , fc_buildSysConfig :: BuildSys.BuildSystemConfig
-    }
-
-$(deriveJSON (jDrop 8) ''PkgManConn.ConnectionInfo)
-$(deriveJSON (jDrop 4) ''BuildSys.BuildSystemConfig)
-$(deriveJSON (jDrop 3) ''FrozoneConfig)

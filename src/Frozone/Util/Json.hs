@@ -1,6 +1,7 @@
 module Frozone.Util.Json
     ( module Data.Aeson
-    , deriveJSON, jDrop
+    , deriveJSON
+    , jDrop, dropPrefix
     )
 where
 
@@ -12,3 +13,8 @@ jDrop i =
     defaultOptions
     { fieldLabelModifier = drop i
     }
+
+dropPrefix str =
+    case span (/='_') str of
+      (_, []) -> str
+      (_, suffix) -> suffix

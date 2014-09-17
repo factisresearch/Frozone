@@ -21,7 +21,7 @@ import Frozone.Util.Logging
 import Frozone.Util.Concurrency
 
 
-
+import qualified Data.ByteString as BS
 import Control.Concurrent.STM
 --import Control.Concurrent.STM.TVar
 import Control.Monad.Trans
@@ -85,11 +85,12 @@ stopBuildSystem ref =
        Sched.stopScheduler $ buildSysRef_sched ref
        doLog LogInfo $ "finished ."
 
+
 ------------------------------------------------------------------------------
 -- just API:
 ------------------------------------------------------------------------------
 
-addBuild :: BuildSystemRef -> BuildId -> TarFile -> ErrorT ErrMsg IO ()
+addBuild :: BuildSystemRef -> BuildId -> Tar -> ErrorT ErrMsg IO ()
 addBuild BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_sched = refSched, buildSysRef_config = config} buildRepoId tarFile = 
     do logBuild buildRepoId LogInfo $ "addBuild called"
        runInThreadMonadAndReturnErrors config refModel (addBuildAction refSched buildRepoId tarFile)
@@ -125,7 +126,10 @@ restartBuild BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_sched 
 -- implementation using the ThreadMonadT:
 ------------------------------------------------------------------------------
 
-addBuildAction :: MonadIO m => SchedRef -> BuildId -> TarFile -> ErrT (ThreadMonadT m) ()
+type BuildParams = (BuildId, TarFilePath)
+
+
+addBuildAction :: MonadIO m => SchedRef -> BuildId -> Tar -> ErrT (ThreadMonadT m) ()
 addBuildAction refSched buildRepoId tarFile =
     do
        -- throw error if repository already exists:
@@ -134,14 +138,19 @@ addBuildAction refSched buildRepoId tarFile =
          Left _ -> return ()
          Right _ -> throwError "repository already exists!"
 
-       jobId <- liftIO $ Sched.addTask refSched $ Sched.Task (buildRepoId, tarFile)
-       modifyModelErr $ addBuildRepository buildRepoId $ newRep jobId
+       -- backup tar file
+       tarFilePath <-
+           lift getConfig >>= \config ->
+               return $ bsc_incoming config </> show (fromBuildId buildRepoId) <.> "tar"
+       liftIO $ BS.writeFile tarFilePath (fromTar tarFile)
+       jobId <- liftIO $ Sched.addTask refSched $ Sched.Task (buildRepoId, tarFilePath)
+       modifyModelErr $ addBuildRepository buildRepoId $ newRep jobId tarFilePath
     where
-        newRep threadId =
+        newRep threadId tarFilePath =
             BuildRepository
             { br_path = Nothing
             , br_buildState = BuildScheduled
-            , br_incoming = tarFile
+            , br_incoming = tarFilePath
             , br_thread = Just threadId
             }
 
@@ -176,19 +185,17 @@ restartBuildAction refSched buildRepoId =
        modifyRepoAndLog buildRepoId $ mapToThread $ const $ Just jobId
 
 
-type BuildParams = (BuildId, TarFile)
-
 buildThread :: BuildParams -> ThreadMonadT IO ()
 buildThread params =
     uncurry buildThread' params
 
-buildThread' :: BuildId -> TarFile -> ThreadMonadT IO ()
-buildThread' buildRepoId tarFile = 
+buildThread' :: BuildId -> TarFilePath -> ThreadMonadT IO ()
+buildThread' buildRepoId tarFilePath = 
     do config <- lift $ getConfig
        modifyRepoAndLog buildRepoId $ mapToBuildState $ const BuildPreparing
 
        -- untar
-       path <- buildDirFromFile config buildRepoId tarFile 
+       path <- buildDirFromFile config buildRepoId tarFilePath
        modifyRepoAndLog buildRepoId $ mapToPath $ const $ Just path
 
        modifyRepoAndLog buildRepoId $ mapToBuildState $ const Building
@@ -203,7 +210,10 @@ buildThread' buildRepoId tarFile =
                 logBuild buildRepoId LogNote $ "stderr was: " ++ stdErr
          _ -> throwError $ "strange build state after build: " ++ show newBuildState
        modifyRepoAndLog buildRepoId $ mapToBuildState $ const newBuildState
-    `handleError` (logBuild buildRepoId LogError)
+    `handleError`
+    do
+       logBuild buildRepoId LogError
+       --modifyRepoAndLog buildRepoId $ mapToBuildState $ const BuildFailed
     --updateBuildRepositoryAndLog buildRepoId $ mapToBuildState $ const Building
 
 ------------------------------------------------------------------------------
@@ -239,7 +249,7 @@ logErrors mx loggingFunc =
          Right val -> return val
 
 -- determines the location where to save a BuildRepository
-destDir :: BuildSystemConfig -> BuildId -> TarFile -> FilePath
+destDir :: BuildSystemConfig -> BuildId -> TarFilePath -> FilePath
 destDir config buildId _ = bsc_baseDir config </> show (fromBuildId buildId)
 
 build :: MonadIO m => BuildSystemConfig -> FilePath -> BuildId -> ErrorT ErrMsg m (BuildState, String, String)
@@ -250,15 +260,16 @@ build _ path buildRepoId =
              ExitSuccess -> (BuildSuccess, stdOut, stdErr)
              _ -> (BuildFailed, stdOut, stdErr)
 
-buildDirFromFile :: MonadIO m => BuildSystemConfig -> BuildId -> TarFile -> ErrT m FilePath
-buildDirFromFile config buildId tarFile =
-    do liftIO $ runProc (logBuild buildId LogNote) "mkdir" ["--parent", destForBuild]
-       liftIO $ runProc (logBuild buildId LogNote) "tar" ["-x", "-f", (bsc_incoming config </> fromTarFile tarFile), "-C", destForBuild]
+buildDirFromFile :: MonadIO m => BuildSystemConfig -> BuildId -> TarFilePath -> ErrT m FilePath
+buildDirFromFile config buildId tarFilePath =
+    do runProcErr (logBuild buildId LogNote) "mkdir" ["--parent", destForBuild]
+       runProcErr (logBuild buildId LogNote) "tar" ["-x", "-f", tarFilePath, "-C", destForBuild]
+       runProcErr (logBuild buildId LogNote) "chmod" ["u+x", destForBuild </> "build.sh"]
        -- would be nicer to use the tar library, but it doesn't preserve filemode bits :-(
        --lift $ Tar.extract destForBuild (bsc_incoming config </> fromTarFile tarFile)
        return $ destForBuild
     where
-        destForBuild = destDir config buildId tarFile
+        destForBuild = destDir config buildId tarFilePath
 
 
 getRepo :: MonadIO m => BuildId -> ErrT (ThreadMonadT m) BuildRepository

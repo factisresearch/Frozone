@@ -9,10 +9,22 @@ import Frozone.Util.Logging
 import Data.List (intercalate)
 import System.Exit
 import System.Process
+import Control.Monad.Error
+
+
+runProcErr :: MonadIO m => (String -> IO ()) -> String -> [String] -> ErrorT String m (String, String)
+runProcErr logFunction prog args =
+    do (exitCode, stdOut, stdErr) <- liftIO $ runProc logFunction prog args
+       case exitCode of
+         ExitSuccess -> return $ (stdOut, stdErr)
+         ExitFailure code ->
+             throwError $
+                 "error while executing \"" ++ procString prog args ++ "\"! exitCode: " ++ show code ++ ", stderr:"
+                 ++ stdErr
 
 runProc :: (String -> IO ()) -> String -> [String] -> IO (ExitCode, String, String)
 runProc logFunction p args =
-    do logFunction (p ++ " " ++ (intercalate " " args))
+    do logFunction $ procString p args
        d@(ec, stdout, stderr) <- readProcessWithExitCode p args ""
        case ec of
          ExitSuccess ->
@@ -20,6 +32,8 @@ runProc logFunction p args =
          ExitFailure _ ->
              doLog LogError stderr
        return d
+
+procString p args = (p ++ " " ++ (intercalate " " args))
 
 {-
 runProc :: String -> [String] -> IO (ExitCode, String, String)
