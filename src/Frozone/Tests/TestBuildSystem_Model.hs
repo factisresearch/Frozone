@@ -12,28 +12,28 @@ import Frozone.BuildSystem.Intern.Model
 
 
 test_AddBuildRepository =
-    do assertSUCCESS $ addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing "dummy.tar") emptyBuildSystemState
+    do assertSUCCESS $ addBuildRepository (BuildId "0") (buildRepository Nothing BuildPreparing "dummy.tar") emptyBuildSystemState
 
 test_AddBuildRepositoryTwice =
     assertERROR $
-        addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing "dummy.tar") 
-        =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing "dummy.tar") emptyBuildSystemState
+        addBuildRepository (BuildId "0") (buildRepository Nothing BuildPreparing "dummy.tar") 
+        =<< addBuildRepository (BuildId "0") (buildRepository Nothing BuildPreparing "dummy.tar") emptyBuildSystemState
 
 test_DeleteBuildRepository =
     assertERROR $
-        deleteBuildRepository (BuildId 0) emptyBuildSystemState
+        deleteBuildRepository (BuildId "0") emptyBuildSystemState
 
 
 test_AddAndDeleteBuildRepository =
     assertSUCCESS $
-        deleteBuildRepository (BuildId 0) 
-        =<< addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing "dummy.tar") emptyBuildSystemState
+        deleteBuildRepository (BuildId "0") 
+        =<< addBuildRepository (BuildId "0") (buildRepository Nothing BuildPreparing "dummy.tar") emptyBuildSystemState
 
 test_getBuildsInState =
     do let allLists = map (flip getBuildsInState emptyBuildSystemState) allBuildStates
        mapM (assertEqual []) allLists
-       buildSys <- assertSUCCESS $ addBuildRepository (BuildId 0) (buildRepository Nothing BuildPreparing "dummy.tar") emptyBuildSystemState
-       assertEqual [(BuildId 0)] $ getBuildsInState BuildPreparing buildSys
+       buildSys <- assertSUCCESS $ addBuildRepository (BuildId "0") (buildRepository Nothing BuildPreparing "dummy.tar") emptyBuildSystemState
+       assertEqual [(BuildId "0")] $ getBuildsInState BuildPreparing buildSys
 
 test_mapToBuildState =
     assertEqual

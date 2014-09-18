@@ -34,7 +34,7 @@ allBuildStates = [(BuildScheduled)..(BuildArchived)]
 -- states in which stopBuild is a valid action:
 validStopStates = [BuildScheduled, BuildPreparing, Building]
 
-newtype BuildId = BuildId { fromBuildId :: Int }
+newtype BuildId = BuildId { fromBuildId :: String }
     deriving (Show, Eq, Ord)
 
 type ErrT = ErrorT ErrMsg

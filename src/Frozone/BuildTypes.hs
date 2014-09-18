@@ -38,7 +38,7 @@ data MicroBranchInfo
     { microBranch_id :: MicroBranchHash
     , microBranch_name :: String -- name/describtion of the corresponding patch
     , microBranch_user :: String -- author of the patch
-    , microBranch_describtion :: String -- some additional info (dependency information, ...) in text form
+    , microBranch_description :: String -- some additional info (dependency information, ...) in text form
     }
     deriving (Show, Eq)
 

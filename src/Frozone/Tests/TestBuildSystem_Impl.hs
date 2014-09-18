@@ -36,15 +36,15 @@ test_add =
         do let impl = buildSysImpl bs
 
            tar <- fakeIncomingTar False
-           _ <- assertERROR $ bs_getBuildRepositoryState impl $ BuildId 0
+           _ <- assertERROR $ bs_getBuildRepositoryState impl $ BuildId "0"
 
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar
-           state <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId "0") tar
+           state <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId "0")
            when (not $ state `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
 
            waitRes <- assertSUCCESS $
-               awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId 0) (buildSysRef_refModel bs)
+               awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId "0") (buildSysRef_refModel bs)
            assertEqual StateReached waitRes
 
            return ()
@@ -57,15 +57,15 @@ test_addTwice =
 
            tar <- fakeIncomingTar False
 
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar
-           state <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId "0") tar
+           state <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId "0")
            when (not $ state `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
            -- adding the same build again should give an error!
-           _ <- assertERROR $ bs_addBuild impl (BuildId 0) tar
+           _ <- assertERROR $ bs_addBuild impl (BuildId "0") tar
 
            waitRes <- assertSUCCESS $
-               awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId 0) (buildSysRef_refModel bs)
+               awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId "0") (buildSysRef_refModel bs)
            assertEqual StateReached waitRes
 
            return ()
@@ -78,18 +78,18 @@ test_addThenRebuild =
 
            tar <- fakeIncomingTar False
 
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar
-           state <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId "0") tar
+           state <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId "0")
            when (not $ state `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
            waitRes <- assertSUCCESS $
-               awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId 0) (buildSysRef_refModel bs)
+               awaitBuildRepoMaxTime 2000 (\br -> br_buildState br `elem` [BuildSuccess,BuildFailed]) (BuildId "0") (buildSysRef_refModel bs)
            assertEqual StateReached waitRes
 
            -- trying to start a build that has already been finished should give an error!
-           _ <- assertERROR $ bs_addBuild impl (BuildId 0) tar
+           _ <- assertERROR $ bs_addBuild impl (BuildId "0") tar
            -- use bs_restart for this case:
-           _ <- assertSUCCESS $ bs_restartBuild impl (BuildId 0)
+           _ <- assertSUCCESS $ bs_restartBuild impl (BuildId "0")
 
            return ()
 
@@ -100,14 +100,14 @@ test_stop =
         do let impl = buildSysImpl bs
            tar <- fakeIncomingTar False
 
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar
-           _ <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId 0)
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId "0") tar
+           _ <- (assertSUCCESS $ bs_getBuildRepositoryState impl $ BuildId "0")
 
            -- this is not a good test. could be the build is already finished...
            assertSUCCESS $
-               bs_stopBuild impl (BuildId 0)
+               bs_stopBuild impl (BuildId "0")
            buildRepState <- assertSUCCESS $
-               bs_getBuildRepositoryState impl (BuildId 0)
+               bs_getBuildRepositoryState impl (BuildId "0")
            assertEqual BuildStopped buildRepState
 
            --threadDelay 1000000
@@ -123,27 +123,27 @@ test_build =
            doLog LogInfo $ "starting build 0..."
            -- building this repository should FAIL:
            tar0 <- fakeIncomingTar True
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar0 
-           state_0 <- assertSUCCESS $ bs_getBuildRepositoryState impl (BuildId 0) 
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId "0") tar0 
+           state_0 <- assertSUCCESS $ bs_getBuildRepositoryState impl (BuildId "0") 
            when (not $ state_0 `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
 
            doLog LogInfo $ "wait for build 0..."
            waitRes <- assertSUCCESS $
-               awaitBuildRepoMaxTime 2000 ((==BuildFailed) . br_buildState) (BuildId 0) (buildSysRef_refModel bs)
+               awaitBuildRepoMaxTime 2000 ((==BuildFailed) . br_buildState) (BuildId "0") (buildSysRef_refModel bs)
            assertEqual StateReached waitRes
 
            doLog LogInfo $ "starting build 1..."
            -- building this repository should work:
            tar1 <- fakeIncomingTar False
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 1) tar1 
-           state_1 <- assertSUCCESS $ bs_getBuildRepositoryState impl (BuildId 1) 
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId "1") tar1 
+           state_1 <- assertSUCCESS $ bs_getBuildRepositoryState impl (BuildId "1") 
            when (not $ state_1 `elem` [BuildScheduled, BuildPreparing, Building, BuildSuccess, BuildFailed]) $ 
                fail "added build, but still in wrong state!"
 
            doLog LogInfo $ "wait for build 1..."
            waitRes2 <- assertSUCCESS $
-               awaitBuildRepoMaxTime 2000 ((==BuildSuccess) . br_buildState) (BuildId 1) (buildSysRef_refModel bs)
+               awaitBuildRepoMaxTime 2000 ((==BuildSuccess) . br_buildState) (BuildId "1") (buildSysRef_refModel bs)
            assertEqual StateReached waitRes2
 
            return ()
@@ -156,18 +156,18 @@ test_concurrentBuilds =
         do let impl = buildSysImpl bs
 
            tar0 <- fakeIncomingTar False
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar0
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId "0") tar0
            tar1 <- fakeIncomingTar False
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 1) tar1
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId "1") tar1
            tar2 <- fakeIncomingTar False
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 2) tar2
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId "2") tar2
 
            waitRes <- assertSUCCESS $ awaitMaxTimeOrErr 2000 cond (buildSysRef_refModel bs)
            assertEqual StateReached $ waitRes
     where
         cond :: Monad m => BuildSystemState -> ErrorT ErrMsg m Bool
         cond buildSystem =
-            do buildRepositories <- mapM ((flip getBuildRepository) buildSystem . BuildId) $ [0..2]
+            do buildRepositories <- mapM ((flip getBuildRepository) buildSystem . BuildId . show ) $ ([0..2] :: [Int])
                return $ and $ map ((==BuildSuccess) . br_buildState) buildRepositories
 
 test_getBuildQueue  :: IO ()
@@ -177,26 +177,26 @@ test_getBuildQueue =
         do let impl = buildSysImpl bs
 
            tar0 <- fakeIncomingTar False
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 0) tar0
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId "0") tar0
            tar1 <- fakeIncomingTar False
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 1) tar1
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId "1") tar1
            tar2 <- fakeIncomingTar False
-           _ <- assertSUCCESS $ bs_addBuild impl (BuildId 2) tar2
+           _ <- assertSUCCESS $ bs_addBuild impl (BuildId "2") tar2
 
            -- sometimes it misses one build, why?!
            allBuilds <- mapM (bs_getBuildQueue impl) [BuildScheduled, Building, BuildSuccess, BuildFailed] :: IO [[BuildId]]
-           assertEqual (map BuildId [0..2]) (join allBuilds)
+           assertEqual (map (BuildId . show) ([0..2] :: [Int])) (join allBuilds)
 
            waitRes <- assertSUCCESS $ awaitMaxTimeOrErr 2000 allBuildsFinished (buildSysRef_refModel bs)
            assertEqual StateReached $ waitRes
 
            -- now all builds should be successful or failed:
            partitionOfBuilds <- mapM (bs_getBuildQueue impl) [BuildSuccess, BuildFailed] :: IO [[BuildId]]
-           assertEqual (map BuildId [0..2]) (join partitionOfBuilds)
+           assertEqual (map (BuildId . show) ([0..2] :: [Int])) (join partitionOfBuilds)
     where
         allBuildsFinished :: Monad m => BuildSystemState -> ErrorT ErrMsg m Bool
         allBuildsFinished buildSystem =
-            do buildRepositories <- mapM ((flip getBuildRepository) buildSystem . BuildId) $ [0..2]
+            do buildRepositories <- mapM ((flip getBuildRepository) buildSystem . BuildId . show) $ ([0..2] :: [Int])
                return $ and $ map ((==BuildSuccess) . br_buildState) buildRepositories
 
 withConfig :: (BuildSystemConfig -> IO a) -> IO a

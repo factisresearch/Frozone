@@ -31,8 +31,8 @@ runController _ _ =
 -}
 runController packMan buildSys =
     do doLog LogInfo "runController called"
-       --forever $
-       id $ 
+       forever $
+       --id $ 
            do
               putStrLn $ "-------------------------------------------------------------------"
               runReaderT runController' (ControllerData packMan buildSys)
@@ -56,18 +56,30 @@ runController' =
 possiblyBuildMicroBranch :: MicroBranchInfo -> ErrorT ErrMsg (ContrM IO) BuildResp
 possiblyBuildMicroBranch microBranchInfo =
     do errOrBuildState <- lift $ runErrorT $ lookupBuildRep microBranchInfo
-       let
-           reallyStartBuild =
-               case errOrBuildState of
-                 Left _ ->  BuildStarted -- error means repository not found
-                 Right buildState ->
-                     case buildState of
-                       BuildStopped -> BuildStarted
-                       BuildFailed -> BuildStarted
-                       _ -> BuildAlreadyDone
+       reallyStartBuild <-
+           case errOrBuildState of
+             Left _ ->
+                 do logMicroBranch microBranchInfo LogInfo $ "not found"
+                    return BuildStarted -- error means repository not found
+             Right buildState ->
+                 case buildState of
+                   BuildStopped ->
+                       do logMicroBranch microBranchInfo LogInfo $ "in state STOPPED"
+                          return BuildStarted
+                   BuildFailed ->
+                       do logMicroBranch microBranchInfo LogInfo $ "in state FAILED"
+                          return $ BuildStarted
+                   _ -> 
+                       do logMicroBranch microBranchInfo LogInfo $ "in state \"" ++ show buildState ++ "\" - nothing to do"
+                          return $ BuildAlreadyDone
        when (reallyStartBuild == BuildStarted) $
+        do logMicroBranch microBranchInfo LogInfo $ "retrieving build repository..."
            getAndAdd microBranchInfo
        return reallyStartBuild
+
+logMicroBranch microBranchInfo logLevel msg =
+    doLog logLevel $
+        "microBranch \"" ++ microBranchHashToString (microBranch_id microBranchInfo) ++ "\": " ++ msg
 
 data BuildResp = BuildAlreadyDone | BuildStarted
     deriving (Show, Eq)
@@ -91,7 +103,8 @@ getAndAdd microBranchInfo =
            tarFile
 
 buildIdFromMicroBranch :: MicroBranchInfo -> BuildId
-buildIdFromMicroBranch _ = (BuildId 0)
+buildIdFromMicroBranch microBranchInfo =
+    BuildId $ microBranchHashToString $ microBranch_id microBranchInfo
 
 
 --type ControllerAPI =
