@@ -42,36 +42,19 @@ cookDir: server/cook
 entryPoint: 07_fullbuild.cook
 boringFile: .boring
 ```
+Explanation:
+
+* cookDir: the path where the two other files are located
+* entryPoint: the cook file, describing how to build the project
+* boringFile: used by docker(cook) ?
+
+`.frozone.yml` has to be part of the repository of your project, as well as the files referenced by it!
 
 (For more information on this, see [dockercook](https://github.com/factisresearch/dockercook))
 
-Then write your cook files. To upload a darcs patch from your repository to Frozone, this script will help you:
+To upload a darcs patch from your repository to Frozone, this script will help you:
 
-```bash
-#!/bin/bash
-
-if [[ "$1" == "" || "$2" == "" || "$1" == "--help" || "$1" == "-h" ]]; then
-    echo "USAGE: $0 YOUR-EMAIL TARGET-REPO"
-    exit 1
-fi
-
-REPO=$2
-EMAIL=$1
-FROZONE_HOST="http://localhost:8080" # ADJUST THIS!
-PATCHFILE="/tmp/bundle-$RANDOM.dpatch"
-
-darcs send $REPO -o $PATCHFILE
-
-echo "Uploading patches ($PATCHFILE) to $FROZONE_HOST ..."
-RESP=$(curl --form "email=$EMAIL" --form "target-repo=$REPO" --form "patch-bundle=@$PATCHFILE" -s "$FROZONE_HOST/bundle/check")
-if [[ $RESP == *message* ]]
-then
-    echo "Ready. You'll be notified at $EMAIL"
-else
-    echo "Some shit happened. Check the frozone log!"
-fi
-rm -rf $PATCHFILE
-```
+./send_patch PROJECT-SHORTNAME
 
 Send patches to Frozone by calling this script.
 

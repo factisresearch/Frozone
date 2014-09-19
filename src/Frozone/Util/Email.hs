@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Frozone.Util.Email where
 
+{-
 import Frozone.Types
 import Frozone.Util.Logging
 
@@ -24,3 +25,4 @@ sendEmail mSmtp from to subject message =
       where
         from' = Address (Just "Frozone") from
         to' = map (Address Nothing) to
+    -}
