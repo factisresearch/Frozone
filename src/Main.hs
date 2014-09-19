@@ -22,11 +22,13 @@ main =
              bracket (initFrozone cfg) exitFrozone
                  runFrozone
 
+type ErrMsg = String
+
 initFrozone :: FrozoneConfig -> IO FrozoneState
 initFrozone fc =
     let pkgManConnInfo = fc_pkgManConn fc in
     do connection <- PkgManConn.connect pkgManConnInfo
-       buildSysRef <- BuildSys.startBuildSystem $ fc_buildSysConfig fc
+       buildSysRef <- errToException $ BuildSys.startBuildSystem $ fc_buildSysConfig fc
        return $
            FrozoneState
            { fs_pkgManConn = connection

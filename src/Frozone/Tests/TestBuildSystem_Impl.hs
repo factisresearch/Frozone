@@ -32,7 +32,7 @@ import Test.Framework
 test_add  :: IO ()
 test_add = 
     withConfig $ \config ->
-    bracket (startBuildSystem config) stopBuildSystem $ \bs ->
+    bracket (assertSUCCESS $ startBuildSystem config) stopBuildSystem $ \bs ->
         do let impl = buildSysImpl bs
 
            tar <- fakeIncomingTar False
@@ -52,7 +52,7 @@ test_add =
 test_addTwice  :: IO ()
 test_addTwice = 
     withConfig $ \config ->
-    bracket (startBuildSystem config) (stopBuildSystem) $ \bs ->
+    bracket (assertSUCCESS $ startBuildSystem config) (stopBuildSystem) $ \bs ->
         do let impl = buildSysImpl bs
 
            tar <- fakeIncomingTar False
@@ -73,7 +73,7 @@ test_addTwice =
 test_addThenRebuild  :: IO ()
 test_addThenRebuild = 
     withConfig $ \config ->
-    bracket (startBuildSystem config) (stopBuildSystem) $ \bs ->
+    bracket (assertSUCCESS $ startBuildSystem config) (stopBuildSystem) $ \bs ->
         do let impl = buildSysImpl bs
 
            tar <- fakeIncomingTar False
@@ -96,7 +96,7 @@ test_addThenRebuild =
 test_stop  :: IO ()
 test_stop = 
     withConfig $ \config ->
-    bracket (startBuildSystem config) (stopBuildSystem) $ \bs ->
+    bracket (assertSUCCESS $ startBuildSystem config) (stopBuildSystem) $ \bs ->
         do let impl = buildSysImpl bs
            tar <- fakeIncomingTar False
 
@@ -117,7 +117,7 @@ test_stop =
 test_build :: IO ()
 test_build =
     withConfig $ \config ->
-    bracket (startBuildSystem config) (stopBuildSystem) $ \bs ->
+    bracket (assertSUCCESS $ startBuildSystem config) (stopBuildSystem) $ \bs ->
         do let impl = buildSysImpl bs
 
            doLog LogInfo $ "starting build 0..."
@@ -152,7 +152,7 @@ test_build =
 test_concurrentBuilds :: IO ()
 test_concurrentBuilds =
     withConfig $ \config ->
-    bracket (startBuildSystem config) (stopBuildSystem) $ \bs ->
+    bracket (assertSUCCESS $ startBuildSystem config) (stopBuildSystem) $ \bs ->
         do let impl = buildSysImpl bs
 
            tar0 <- fakeIncomingTar False
@@ -173,7 +173,7 @@ test_concurrentBuilds =
 test_getBuildQueue  :: IO ()
 test_getBuildQueue = 
     withConfig $ \config ->
-    bracket (startBuildSystem config) (stopBuildSystem) $ \bs ->
+    bracket (assertSUCCESS $ startBuildSystem config) (stopBuildSystem) $ \bs ->
         do let impl = buildSysImpl bs
 
            tar0 <- fakeIncomingTar False

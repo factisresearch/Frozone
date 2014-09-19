@@ -11,6 +11,7 @@ module Frozone.BuildSystem.Impl(
 
 import Frozone.BuildSystem.Intern.Types
 import Frozone.BuildSystem.API
+import Frozone.BuildSystem.Persistence
 import qualified Frozone.Util.Concurrency.Scheduling as Sched
 import Frozone.BuildSystem.ThreadMonad
 
@@ -23,11 +24,9 @@ import Frozone.Util.Concurrency
 
 import qualified Data.ByteString as BS
 import Control.Concurrent.STM
---import Control.Concurrent.STM.TVar
-import Control.Monad.Trans
-import Control.Monad.Error
 import System.Exit
 import System.FilePath
+import System.Directory
 import Data.Maybe
 
 
@@ -52,13 +51,26 @@ buildSysImpl buildSystemRef =
     , bs_restartBuild = restartBuild buildSystemRef
     }
 
-startBuildSystem :: BuildSystemConfig -> IO BuildSystemRef
+startBuildSystem :: BuildSystemConfig -> ErrorT ErrMsg IO BuildSystemRef
 startBuildSystem config =
     do doLog LogInfo $ "startBuildSystem called"
-       doLog LogInfo $ "starting build scheduler..."
        when (isNothing $ bsc_storage config) $
            doLog LogWarn $ "no storage dir -> frozone will not safe builds!"
-       (schedRef, ref) <- evalThreadMonadTUnsafe (Sched.runScheduler 6 buildThread) config emptyBuildSystemState id
+       let 
+           mStoragePath = bsc_storage config
+       model <-
+           case mStoragePath of
+             Just path ->
+                 lift (doesFileExist path) >>= \fileExists ->
+                 if fileExists
+                   then loadModel path
+                   else return emptyBuildSystemState
+             Nothing -> 
+                 do doLog LogWarn $ "no storage dir -> frozone will not safe builds!"
+                    return $ emptyBuildSystemState
+       --let model = emptyBuildSystemState
+       doLog LogInfo $ "starting build scheduler..."
+       (schedRef, _, ref) <- lift $ runThreadMonadTUnsafe (Sched.runScheduler 6 buildThread) config model id
        doLog LogInfo $ "end of startBuildSystem"
        return $
            BuildSystemRef
@@ -217,7 +229,7 @@ runInThreadMonadAndReturnErrors ::
 runInThreadMonadAndReturnErrors config refModel action = 
     do 
        let action' = runErrorT action -- :: ThreadMonadT (ErrT IO) (Either ErrMsg a)
-       errOrVal <- evalThreadMonadTWithTVar action' config refModel toIO -- :: ErrT IO (Either ErrMsg a)
+       (errOrVal, _) <- runThreadMonadTWithTVar action' config refModel toIO -- :: ErrT IO (Either ErrMsg a)
        case errOrVal of
          Left err ->
              do --logBuild buildRepoId LogError $ "error: " ++ err

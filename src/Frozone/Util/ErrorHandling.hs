@@ -1,7 +1,14 @@
-module Frozone.Util.ErrorHandling where
+module Frozone.Util.ErrorHandling(
+    module Frozone.Util.ErrorHandling
+    , module Control.Monad.Error
+) where
 
 import Control.Monad.Error
+import Control.Monad.Trans.Maybe
 import Control.Monad.Identity
+
+import qualified Data.Var.IO as IO
+import Control.Exception
 
 
 --type ErrT m = ErrorT String m
@@ -20,6 +27,32 @@ handleError errVal handler =
        case eitherVal of
          Left err -> handler err
          Right a -> return a
+
+errToException :: ErrorT String IO a -> IO a
+errToException errVal =
+    do errOrVal <- runErrorT errVal
+       case errOrVal of
+         Left err -> fail $ err
+         Right val -> return val
+
+catchAsErr :: IO a -> ErrorT String IO a
+catchAsErr ioVal =
+    do ioVar <- lift $ (IO.newVar Nothing :: IO (IO.IOVar (Maybe String)))
+       val <- lift $ ioVal `catch` \e  ->
+           do IO.writeVar ioVar (Just $ show (e :: SomeException))
+              return $ undefined
+       mError <- lift $ IO.readVar ioVar
+       case mError of
+         Nothing ->
+             return val
+         Just err ->
+             throwError err
+
+catchAsMaybe :: IO a -> MaybeT IO a
+catchAsMaybe ioVal =
+    do errOrVal <- lift $ runErrorT $ catchAsErr ioVal
+       MaybeT $ return $
+           either (const $ Nothing) Just $ errOrVal
 
 {-
 returnError :: Monad m => ErrorT err m () -> -> m (Maybe err)

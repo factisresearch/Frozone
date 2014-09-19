@@ -9,6 +9,8 @@ import Frozone.BuildSystem.API
 import Frozone.Util.Concurrency.SafeGlob
 import qualified Frozone.Util.Concurrency.Scheduling as Sched
 
+import qualified Frozone.BuildSystem.Persistence as Persist
+
 import Frozone.Util.Logging
 import Control.Monad.Reader
 import Control.Monad.Error
@@ -28,33 +30,12 @@ instance MonadTrans ThreadMonadT where
     lift x = ThreadMonadT $ lift $ lift x
 
 
-{-
-evalThreadMonadT :: MonadIO m => ThreadMonadT m a -> BuildSystemConfig -> BuildSystemState -> (forall b . m b -> IO b) -> m a
-evalThreadMonadT threadMonad config startState toIO =
-    liftM fst $ runThreadMonadT threadMonad config startState toIO 
-
-execThreadMonadT :: MonadIO m => ThreadMonadT m a -> BuildSystemConfig -> BuildSystemState -> (forall b . m b -> IO b) -> m BuildSystemState
-execThreadMonadT threadMonad config startState toIO =
-    liftM snd $ runThreadMonadT threadMonad config startState toIO 
-
-runThreadMonadT :: MonadIO m => ThreadMonadT m a -> BuildSystemConfig -> BuildSystemState -> (forall b . m b -> IO b) -> m (a, BuildSystemState)
+runThreadMonadT :: MonadIO m => ThreadMonadT m a -> BuildSystemConfig -> (BuildSystemState, PersistSched) -> (forall b . m b -> IO b) -> m (a, BuildSystemState)
 runThreadMonadT threadMonad config startState toIO =
-    runReaderT ((runSafeGlob $ fromThreadMonadT threadMonad) startState toIO') config
+    do (res, (model, _)) <- runReaderT ((runSafeGlob $ fromThreadMonadT threadMonad) startState toIO') config
+       return $ (res, model)
     where
         toIO' x = toIO $ runReaderT x config
--}
-
-evalThreadMonadTWithTVar :: MonadIO m => ThreadMonadT m a -> BuildSystemConfig -> TVar (BuildSystemState, PersistSched) -> (forall b . m b -> IO b) -> m a
-evalThreadMonadTWithTVar threadMonad config ref toIO =
-    do (res, _) <- runThreadMonadTWithTVar threadMonad config ref toIO 
-       return res
-
-{-
-execThreadMonadTWithTVar :: MonadIO m => ThreadMonadT m a -> BuildSystemConfig -> TVar BuildSystemState -> (forall b . m b -> IO b) -> m BuildSystemState
-execThreadMonadTWithTVar threadMonad config ref toIO =
-    do (_, newModel) <- runThreadMonadTWithTVar threadMonad config ref toIO 
-       return newModel
--}
 
 runThreadMonadTWithTVar :: MonadIO m => ThreadMonadT m a -> BuildSystemConfig -> TVar (BuildSystemState, PersistSched) -> (forall b . m b -> IO b) -> m (a, BuildSystemState)
 runThreadMonadTWithTVar threadMonad config ref toIO =
@@ -62,16 +43,6 @@ runThreadMonadTWithTVar threadMonad config ref toIO =
        return $ (res, model)
     where
         toIO' x = toIO $ runReaderT x config
-
-evalThreadMonadTUnsafe :: MonadIO m => ThreadMonadT m a -> BuildSystemConfig -> BuildSystemState -> (forall b . m b -> IO b) -> m (a, TVar (BuildSystemState, PersistSched))
-evalThreadMonadTUnsafe threadMonad config startState toIO =
-    do (res, _, ref) <- runThreadMonadTUnsafe threadMonad config startState toIO 
-       return (res, ref)
-
-execThreadMonadTUnsafe :: MonadIO m => ThreadMonadT m a -> BuildSystemConfig -> BuildSystemState -> (forall b . m b -> IO b) -> m (BuildSystemState, TVar (BuildSystemState, PersistSched))
-execThreadMonadTUnsafe threadMonad config startState toIO =
-    do (_, newModel, ref) <- runThreadMonadTUnsafe threadMonad config startState toIO 
-       return (newModel, ref)
 
 runThreadMonadTUnsafe :: MonadIO m => ThreadMonadT m a -> BuildSystemConfig -> BuildSystemState -> (forall b . m b -> IO b) -> m (a, BuildSystemState, TVar (BuildSystemState, PersistSched))
 runThreadMonadTUnsafe threadMonad config startState toIO =
@@ -122,7 +93,7 @@ safeModelWorker :: MonadIO m => Maybe FilePath -> BuildSystemState -> m ()
 safeModelWorker mPath model =
     flip (maybe (return ())) mPath $ \path ->
         do doLog LogInfo "saving model!"
-           liftIO $ writeFile path (show model)
+           liftIO $ Persist.safeModel path model
 
 mapToFst :: (a -> b) -> (a, c) -> (b, c)
 mapToFst f (a,b) = (f a, b)
