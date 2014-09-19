@@ -21,14 +21,10 @@ import Frozone.Util.Concurrency
 import Frozone.Util.Logging( LogLevel(..) )
 import qualified Frozone.Util.Logging as Log
 import Frozone.Util.ErrorHandling
---import qualified Frozone.Util.Queue as Q
---import qualified Data.Map as M
 import Data.Maybe
 import Data.Either
 
-import Control.Monad.Error
 import Control.Monad.State
---import Control.Monad.Identity
 import Control.Monad.STM
 import Control.Concurrent.STM.TVar
 import Control.Concurrent
@@ -40,17 +36,13 @@ class (MonadIO m) => Forkable m where
 instance Forkable IO where
     fork = forkIO
 
---newtype SchedData a = SchedData { fromSchedData :: Model.SchedData a ThreadId }
 newtype SchedRef a = SchedRef { fromSchedRef :: TVar (Model a) }
 
 type Model a = Model.SchedData a ThreadId
-{-
-type Task a = Model.Task a
-type JobId = Model.JobId
-type JobState = Model.JobState
--}
 type ErrMsg = Model.ErrMsg
 
+
+debugLog = False
 
 runScheduler :: Forkable m => Int -> (a -> m ()) -> m (SchedRef a)
 runScheduler maxThreads f =
@@ -105,7 +97,6 @@ removeJob schedRef jobId =
          Right (Just threadId) -> liftIO $ killThread threadId
          Right Nothing -> return ()
 
-
 killAllJobs :: SchedRef a -> IO ()
 killAllJobs schedRef = 
     do allThreadIds <-
@@ -150,7 +141,13 @@ waitForAll schedRef =
 -- Internals
 -----------------------------------------------------------------------------
 
-doLog logLevel msg = Log.doLog logLevel $ "SCHEDULER: " ++ msg
+doLog logLevel msg =
+    if debugLog
+      then Log.doLog logLevel $ "SCHEDULER: " ++ msg
+      else
+          if not $ logLevel `elem` [LogInfo, LogNote]
+            then Log.doLog logLevel $ "SCHEDULER: " ++ msg
+            else return ()
 
 modifySchedData :: SchedRef a -> (State (Model a) res) -> STM res
 modifySchedData schedRef stateTransf = 

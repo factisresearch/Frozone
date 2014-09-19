@@ -56,33 +56,55 @@ runController' =
 possiblyBuildMicroBranch :: MicroBranchInfo -> ErrorT ErrMsg (ContrM IO) BuildResp
 possiblyBuildMicroBranch microBranchInfo =
     do errOrBuildState <- lift $ runErrorT $ lookupBuildRep microBranchInfo
-       reallyStartBuild <-
-           case errOrBuildState of
-             Left _ ->
-                 do logMicroBranch microBranchInfo LogInfo $ "not found"
-                    return BuildStarted -- error means repository not found
-             Right buildState ->
-                 case buildState of
-                   BuildStopped ->
-                       do logMicroBranch microBranchInfo LogInfo $ "in state STOPPED"
-                          return BuildStarted
-                   BuildFailed ->
-                       do logMicroBranch microBranchInfo LogInfo $ "in state FAILED"
-                          return $ BuildStarted
-                   _ -> 
-                       do logMicroBranch microBranchInfo LogInfo $ "in state \"" ++ show buildState ++ "\" - nothing to do"
-                          return $ BuildAlreadyDone
-       when (reallyStartBuild == BuildStarted) $
-        do logMicroBranch microBranchInfo LogInfo $ "retrieving build repository..."
+       let reallyStartBuild =
+               case errOrBuildState of -- (error means repository not found)
+                 Left _ ->
+                     AddedBuild
+                 Right buildState ->
+                     if buildAlreadyDone buildState
+                       then AlreadyDone buildState
+                       else
+                           if buildAlreadyScheduled buildState
+                             then AlreadyScheduled buildState
+                             else
+                                 if buildState == BuildStopped
+                                   then RestartedBuild
+                                   else NothingToDo buildState
+       {- TODO:
+       -- * only fetch if necessary
+       -- * ! if in state BuildStopped, use restartBuild instead of addBuild!
+       -}
+       when (haveToFetch reallyStartBuild || haveToBuild reallyStartBuild) $
            getAndAdd microBranchInfo
+       logMicroBranch microBranchInfo LogInfo $ show reallyStartBuild
        return reallyStartBuild
 
 logMicroBranch microBranchInfo logLevel msg =
     doLog logLevel $
         "microBranch \"" ++ microBranchHashToString (microBranch_id microBranchInfo) ++ "\": " ++ msg
 
-data BuildResp = BuildAlreadyDone | BuildStarted
-    deriving (Show, Eq)
+buildAlreadyDone BuildSuccess = True
+buildAlreadyDone BuildFailed = True
+buildAlreadyDone _ = False
+
+buildAlreadyScheduled BuildSuccess = True
+buildAlreadyScheduled BuildFailed = True
+buildAlreadyScheduled _ = False
+
+data BuildResp
+    = AddedBuild
+    | RestartedBuild
+    | AlreadyScheduled BuildState
+    | AlreadyDone BuildState
+    | NothingToDo BuildState
+    deriving (Show)
+
+haveToFetch AddedBuild = True
+haveToFetch _ = False
+
+haveToBuild AddedBuild = True
+haveToBuild RestartedBuild = True
+haveToBuild _ = False
 
 
 lookupBuildRep :: MicroBranchInfo -> ErrorT ErrMsg (ContrM IO) BuildState

@@ -143,7 +143,7 @@ addBuildAction refSched buildRepoId tarFile =
        -- backup tar file
        tarFilePath <-
            lift getConfig >>= \config ->
-               return $ bsc_incoming config </> show (fromBuildId buildRepoId) <.> "tar"
+               return $ bsc_incoming config </> (fromBuildId buildRepoId) <.> "tar"
        liftIO $ BS.writeFile tarFilePath (fromTar tarFile)
        jobId <- liftIO $ Sched.addTask refSched $ Sched.Task (buildRepoId, tarFilePath)
        modifyModelErr $ addBuildRepository buildRepoId $ newRep jobId tarFilePath
@@ -215,8 +215,6 @@ buildThread' buildRepoId tarFilePath =
     `handleError`
     do
        logBuild buildRepoId LogError
-       --modifyRepoAndLog buildRepoId $ mapToBuildState $ const BuildFailed
-    --updateBuildRepositoryAndLog buildRepoId $ mapToBuildState $ const Building
 
 ------------------------------------------------------------------------------
 -- Internals
@@ -252,7 +250,7 @@ logErrors mx loggingFunc =
 
 -- determines the location where to save a BuildRepository
 destDir :: BuildSystemConfig -> BuildId -> TarFilePath -> FilePath
-destDir config buildId _ = bsc_baseDir config </> show (fromBuildId buildId)
+destDir config buildId _ = bsc_baseDir config </> (fromBuildId buildId)
 
 build :: MonadIO m => BuildSystemConfig -> FilePath -> BuildId -> ErrorT ErrMsg m (BuildState, String, String)
 build _ path buildRepoId =
