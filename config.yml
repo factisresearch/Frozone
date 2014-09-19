@@ -4,3 +4,4 @@ pkgManConn:
 buildSysConfig:
   baseDir: workDir
   incoming: incoming
+  storage: save.froz_save

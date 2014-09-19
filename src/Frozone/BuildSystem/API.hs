@@ -28,14 +28,14 @@ data BuildState
     | BuildSuccess -- build script finished with exit code == 0
     | BuildFailed -- build script finished with exit code /= 0
     | BuildArchived -- deleted from disk
-    deriving (Show, Eq, Enum)
+    deriving (Show, Read, Eq, Enum)
 
 allBuildStates = [(BuildScheduled)..(BuildArchived)]
 -- states in which stopBuild is a valid action:
 validStopStates = [BuildScheduled, BuildPreparing, Building]
 
 newtype BuildId = BuildId { fromBuildId :: String }
-    deriving (Show, Eq, Ord)
+    deriving (Show, Read, Eq, Ord)
 
 type ErrT = ErrorT ErrMsg
 type ErrMsg = String

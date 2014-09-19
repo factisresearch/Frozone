@@ -21,7 +21,7 @@ type Tasks a = Q.Queue (JobId, Task a)
 type Running a threadId = M.Map JobId (Thread a threadId)
 
 newtype JobId = JobId { fromJobId :: Int }
-    deriving (Show, Eq, Ord, Arbitrary)
+    deriving (Show, Read, Eq, Ord, Arbitrary)
 
 data JobState = JobWaiting | JobRunning | JobFinished
     deriving (Eq)

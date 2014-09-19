@@ -105,40 +105,6 @@ modifyGlobErr f = do
          Nothing -> return ()
          Just err -> throwError err 
 
-{-
-modifyGlobErr :: (Error err, MonadError err m, MonadIO m) => (glob -> ErrorT err Identity glob) -> SafeGlobT glob m ()
-modifyGlobErr f = do
-    do SafeGlobT $ 
-           do ref <- asks rs_glob
-              mErr <- lift $ liftIO $ atomically $
-                  do glob <- readTVar ref
-                     case runIdentity $ runErrorT $ f glob of
-                       Left err -> return $ Just err
-                       Right res ->
-                           do writeTVar ref res
-                              return $ Nothing
-              case mErr of
-                Nothing -> return ()
-                Just err -> throwError err 
--}
-
-{-
-modifyGlobErr :: (Error err, MonadError err m, MonadIO m) => (glob -> ErrorT err Identity glob) -> SafeGlobT glob m (ErrorT err Identity ())
-modifyGlobErr f = do
-    do mErr <- SafeGlobT $ 
-           do ref <- asks rs_glob
-              lift $ liftIO $ atomically $
-                  do glob <- readTVar ref
-                     case runIdentity $ runErrorT $ f glob of
-                       Left err -> return $ Just err
-                       Right res ->
-                           do writeTVar ref res
-                              return $ Nothing
-       case mErr of
-         Nothing -> return $ return ()
-         Just err -> return $ throwError err 
--}
-
 forkThread :: MonadIO m
     => SafeGlobT s m ()
     -> SafeGlobT s m ThreadId

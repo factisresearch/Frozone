@@ -9,4 +9,5 @@ data BuildSystemConfig
     = BuildSystemConfig
     { bsc_baseDir :: FilePath
     , bsc_incoming :: FilePath
+    , bsc_storage :: Maybe FilePath
     }

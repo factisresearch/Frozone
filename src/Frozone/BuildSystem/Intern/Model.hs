@@ -16,7 +16,7 @@ data BuildSystemState
     = BuildSystemState
     { buildSysSt_allBuilds :: M.Map BuildId BuildRepository
     }
-  deriving (Show, Eq)
+  deriving (Show, Read, Eq)
 
 data BuildRepository
     = BuildRepository
@@ -25,7 +25,7 @@ data BuildRepository
     , br_incoming :: TarFilePath
     , br_thread :: Maybe Sched.JobId
     }
-  deriving (Show, Eq)
+  deriving (Show, Read, Eq)
 
 type TarFilePath = FilePath
 

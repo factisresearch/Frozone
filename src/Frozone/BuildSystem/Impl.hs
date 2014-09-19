@@ -28,28 +28,16 @@ import Control.Monad.Trans
 import Control.Monad.Error
 import System.Exit
 import System.FilePath
-
-{-
-import qualified Codec.Archive.Tar as Tar
-import qualified Codec.Archive.Tar.Entry as Tar
---import qualified Data.List as L
---import qualified Data.Map.Strict as M
---import System.Directory
---import Control.Exception
-
-import qualified Data.ByteString.Lazy as BS
--}
+import Data.Maybe
 
 
 type SchedRef = Sched.SchedRef BuildParams
-
---type RefToBuildSystemState = TVar BuildSystemState
 
 
 data BuildSystemRef
     = BuildSystemRef
     { buildSysRef_sched :: SchedRef
-    , buildSysRef_refModel :: TVar BuildSystemState
+    , buildSysRef_refModel :: TVar (BuildSystemState, PersistSched)
     , buildSysRef_config :: BuildSystemConfig
     }
 
@@ -67,7 +55,9 @@ buildSysImpl buildSystemRef =
 startBuildSystem :: BuildSystemConfig -> IO BuildSystemRef
 startBuildSystem config =
     do doLog LogInfo $ "startBuildSystem called"
-       doLog LogInfo $ "starting scheduler..."
+       doLog LogInfo $ "starting build scheduler..."
+       when (isNothing $ bsc_storage config) $
+           doLog LogWarn $ "no storage dir -> frozone will not safe builds!"
        (schedRef, ref) <- evalThreadMonadTUnsafe (Sched.runScheduler 6 buildThread) config emptyBuildSystemState id
        doLog LogInfo $ "end of startBuildSystem"
        return $
@@ -98,7 +88,7 @@ addBuild BuildSystemRef{ buildSysRef_refModel = refModel, buildSysRef_sched = re
 
 getBuildRepositoryState :: BuildSystemRef -> BuildId -> ErrT IO BuildState
 getBuildRepositoryState buildSysRef buildRepoId =
-    do model <- lift $ atomically $ readTVar (buildSysRef_refModel buildSysRef)
+    do model <- liftM fst $ lift $ atomically $ readTVar (buildSysRef_refModel buildSysRef)
        liftM br_buildState $ getBuildRepository buildRepoId model
 
 getBuildQueue :: BuildSystemRef -> BuildState -> IO [BuildId]
@@ -221,7 +211,7 @@ buildThread' buildRepoId tarFilePath =
 ------------------------------------------------------------------------------
 
 runInThreadMonadAndReturnErrors ::
-    BuildSystemConfig -> TVar BuildSystemState ->
+    BuildSystemConfig -> TVar (BuildSystemState, PersistSched) ->
     (forall m . MonadIO m => ErrT (ThreadMonadT m) a) ->
     ErrT IO a
 runInThreadMonadAndReturnErrors config refModel action = 
@@ -286,14 +276,8 @@ modifyRepoAndLog buildRepoId f =
 logBuild buildRepoId logLevel msg = 
     doLog logLevel $ "Build " ++ show (fromBuildId buildRepoId) ++ ": " ++ msg
 
-awaitBuildRepoMaxTime :: TimeMs -> (BuildRepository -> Bool) -> BuildId -> TVar BuildSystemState -> ErrorT ErrMsg IO AwaitRes
+awaitBuildRepoMaxTime :: TimeMs -> (BuildRepository -> Bool) -> BuildId -> TVar (BuildSystemState, PersistSched) -> ErrorT ErrMsg IO AwaitRes
 awaitBuildRepoMaxTime maxTime condBr buildRepoId ref =
-    awaitMaxTimeOrErr maxTime cond ref 
+    awaitMaxTimeOrErr maxTime (\(x, _) -> cond x) ref 
     where
         cond buildSystemState = return . condBr =<< getBuildRepository buildRepoId buildSystemState
-
-{-
-loadBuildSystem :: IO RefToBuildSystemState
-
-saveBuildSystem :: RefToBuildSystemState -> IO ()
--}

@@ -162,7 +162,7 @@ test_concurrentBuilds =
            tar2 <- fakeIncomingTar False
            _ <- assertSUCCESS $ bs_addBuild impl (BuildId "2") tar2
 
-           waitRes <- assertSUCCESS $ awaitMaxTimeOrErr 2000 cond (buildSysRef_refModel bs)
+           waitRes <- assertSUCCESS $ awaitMaxTimeOrErr 2000 (\(model,_) -> cond model) (buildSysRef_refModel bs)
            assertEqual StateReached $ waitRes
     where
         cond :: Monad m => BuildSystemState -> ErrorT ErrMsg m Bool
@@ -187,7 +187,7 @@ test_getBuildQueue =
            allBuilds <- mapM (bs_getBuildQueue impl) [BuildScheduled, Building, BuildSuccess, BuildFailed] :: IO [[BuildId]]
            assertEqual (map (BuildId . show) ([0..2] :: [Int])) (join allBuilds)
 
-           waitRes <- assertSUCCESS $ awaitMaxTimeOrErr 2000 allBuildsFinished (buildSysRef_refModel bs)
+           waitRes <- assertSUCCESS $ awaitMaxTimeOrErr 2000 (\(model,_) -> allBuildsFinished model) (buildSysRef_refModel bs)
            assertEqual StateReached $ waitRes
 
            -- now all builds should be successful or failed:
@@ -211,6 +211,7 @@ withConfig f =
           BuildSystemConfig
           { bsc_baseDir = bsBaseDir dir
           , bsc_incoming = incomingDir dir
+          , bsc_storage = Nothing
           }
 
 initTest dir = 
